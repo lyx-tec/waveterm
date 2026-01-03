@@ -273,6 +273,7 @@ declare global {
         resultsIndex: PrimitiveAtom<number>;
         resultsCount: PrimitiveAtom<number>;
         isOpen: PrimitiveAtom<boolean>;
+        focusTrigger: PrimitiveAtom<number>;
         regex?: PrimitiveAtom<boolean>;
         caseSensitive?: PrimitiveAtom<boolean>;
         wholeWord?: PrimitiveAtom<boolean>;

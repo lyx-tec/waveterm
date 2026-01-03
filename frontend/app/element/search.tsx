@@ -26,6 +26,7 @@ const SearchComponent = ({
     caseSensitive: caseSensitiveAtom,
     wholeWord: wholeWordAtom,
     isOpen: isOpenAtom,
+    focusTrigger: focusTriggerAtom,
     anchorRef,
     offsetX = 10,
     offsetY = 10,
@@ -33,10 +34,12 @@ const SearchComponent = ({
     onNext,
     onPrev,
 }: SearchProps) => {
+    const inputRef = useRef<HTMLInputElement>(null);
     const [isOpen, setIsOpen] = useAtom<boolean>(isOpenAtom);
     const [search, setSearch] = useAtom<string>(searchAtom);
     const [index, setIndex] = useAtom<number>(indexAtom);
     const [numResults, setNumResults] = useAtom<number>(numResultsAtom);
+    const [focusTrigger] = useAtom<number>(focusTriggerAtom);
 
     const handleOpenChange = useCallback((open: boolean) => {
         setIsOpen(open);
@@ -55,6 +58,12 @@ const SearchComponent = ({
         setNumResults(0);
         onSearch?.(search);
     }, [search]);
+
+    useEffect(() => {
+        if (focusTrigger > 0 && isOpen) {
+            inputRef.current?.focus();
+        }
+    }, [focusTrigger, isOpen]);
 
     const middleware: Middleware[] = [];
     const offsetCallback = useCallback(
@@ -146,6 +155,7 @@ const SearchComponent = ({
                 <FloatingPortal>
                     <div className="search-container" style={{ ...floatingStyles }} ref={refs.setFloating}>
                         <Input
+                            ref={inputRef}
                             placeholder="Search"
                             value={search}
                             onChange={setSearch}
@@ -197,6 +207,7 @@ export function useSearch(options?: SearchOptions): SearchProps {
             resultsIndex: atom(0),
             resultsCount: atom(0),
             isOpen: atom(false),
+            focusTrigger: atom(0),
             regex: options?.regex !== undefined ? atom(options.regex) : undefined,
             caseSensitive: options?.caseSensitive !== undefined ? atom(options.caseSensitive) : undefined,
             wholeWord: options?.wholeWord !== undefined ? atom(options.wholeWord) : undefined,
