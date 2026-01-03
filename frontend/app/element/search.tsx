@@ -11,6 +11,7 @@ import "./search.scss";
 
 type SearchProps = SearchAtoms & {
     anchorRef?: React.RefObject<HTMLElement>;
+    searchInputRef?: React.RefObject<HTMLInputElement>;
     offsetX?: number;
     offsetY?: number;
     onSearch?: (search: string) => void;
@@ -26,7 +27,7 @@ const SearchComponent = ({
     caseSensitive: caseSensitiveAtom,
     wholeWord: wholeWordAtom,
     isOpen: isOpenAtom,
-    focusTrigger: focusTriggerAtom,
+    searchInputRef: providedInputRef,
     anchorRef,
     offsetX = 10,
     offsetY = 10,
@@ -34,12 +35,12 @@ const SearchComponent = ({
     onNext,
     onPrev,
 }: SearchProps) => {
-    const inputRef = useRef<HTMLInputElement>(null);
+    const localInputRef = useRef<HTMLInputElement>(null);
+    const inputRef = providedInputRef || localInputRef;
     const [isOpen, setIsOpen] = useAtom<boolean>(isOpenAtom);
     const [search, setSearch] = useAtom<string>(searchAtom);
     const [index, setIndex] = useAtom<number>(indexAtom);
     const [numResults, setNumResults] = useAtom<number>(numResultsAtom);
-    const [focusTrigger] = useAtom<number>(focusTriggerAtom);
 
     const handleOpenChange = useCallback((open: boolean) => {
         setIsOpen(open);
@@ -58,12 +59,6 @@ const SearchComponent = ({
         setNumResults(0);
         onSearch?.(search);
     }, [search]);
-
-    useEffect(() => {
-        if (focusTrigger > 0 && isOpen) {
-            inputRef.current?.focus();
-        }
-    }, [focusTrigger, isOpen]);
 
     const middleware: Middleware[] = [];
     const offsetCallback = useCallback(
@@ -194,6 +189,7 @@ export const Search = memo(SearchComponent) as typeof SearchComponent;
 
 type SearchOptions = {
     anchorRef?: React.RefObject<HTMLElement>;
+    searchInputRef?: React.RefObject<HTMLInputElement>;
     viewModel?: ViewModel;
     regex?: boolean;
     caseSensitive?: boolean;
@@ -207,7 +203,6 @@ export function useSearch(options?: SearchOptions): SearchProps {
             resultsIndex: atom(0),
             resultsCount: atom(0),
             isOpen: atom(false),
-            focusTrigger: atom(0),
             regex: options?.regex !== undefined ? atom(options.regex) : undefined,
             caseSensitive: options?.caseSensitive !== undefined ? atom(options.caseSensitive) : undefined,
             wholeWord: options?.wholeWord !== undefined ? atom(options.wholeWord) : undefined,
@@ -215,15 +210,19 @@ export function useSearch(options?: SearchOptions): SearchProps {
         []
     );
     const anchorRef = options?.anchorRef ?? useRef(null);
+    const searchInputRef = options?.searchInputRef ?? useRef(null);
     useEffect(() => {
         if (options?.viewModel) {
             options.viewModel.searchAtoms = searchAtoms;
+            // Store searchInputRef on viewModel for external access (e.g., keymodel.ts)
+            (options.viewModel as any).searchInputRef = searchInputRef;
             return () => {
                 options.viewModel.searchAtoms = undefined;
+                (options.viewModel as any).searchInputRef = undefined;
             };
         }
     }, [options?.viewModel]);
-    return { ...searchAtoms, anchorRef };
+    return { ...searchAtoms, anchorRef, searchInputRef };
 }
 
 const createToggleButtonDecl = (

@@ -663,8 +663,14 @@ function registerGlobalKeys() {
             globalStore.set(bcm.viewModel.searchAtoms.isOpen, true);
             globalStore.set(bcm.viewModel.searchAtoms.searchValue, selectedText);
 
-            const currentValue = globalStore.get(bcm.viewModel.searchAtoms.focusTrigger) as number;
-            globalStore.set(bcm.viewModel.searchAtoms.focusTrigger, currentValue + 1);
+            // Focus the search input using the exposed searchInputRef
+            const searchInputRef = bcm.viewModel.searchInputRef;
+            if (searchInputRef?.current) {
+                setTimeout(() => {
+                    searchInputRef.current?.focus();
+                }, 10);
+            }
+
             return true;
         }
         return false;
