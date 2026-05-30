@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 )
 
 var editConfigMagnified bool
@@ -37,7 +38,13 @@ func editConfigRun(cmd *cobra.Command, args []string) (rtnErr error) {
 		configFile = args[0]
 	}
 
+	tabId := getTabIdFromEnv()
+	if tabId == "" {
+		return fmt.Errorf("no WAVETERM_TABID env var set")
+	}
+
 	wshCmd := &wshrpc.CommandCreateBlockData{
+		TabId: tabId,
 		BlockDef: &waveobj.BlockDef{
 			Meta: map[string]interface{}{
 				waveobj.MetaKey_View: "waveconfig",
@@ -48,7 +55,7 @@ func editConfigRun(cmd *cobra.Command, args []string) (rtnErr error) {
 		Focused:   true,
 	}
 
-	_, err := RpcClient.SendRpcRequest(wshrpc.Command_CreateBlock, wshCmd, &wshrpc.RpcOpts{Timeout: 2000})
+	_, err := wshclient.CreateBlockCommand(RpcClient, *wshCmd, &wshrpc.RpcOpts{Timeout: 2000})
 	if err != nil {
 		return fmt.Errorf("opening config file: %w", err)
 	}

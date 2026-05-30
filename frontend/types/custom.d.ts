@@ -1,43 +1,35 @@
-// Copyright 2025, Command Line Inc.
+// Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import type { WaveEnv } from "@/app/waveenv/waveenv";
 import { type Placement } from "@floating-ui/react";
 import type * as jotai from "jotai";
 import type * as rxjs from "rxjs";
 
 declare global {
     type GlobalAtomsType = {
-        clientId: jotai.Atom<string>; // readonly
-        builderId: jotai.PrimitiveAtom<string>; // readonly (for builder mode)
+        builderId: jotai.Atom<string>; // readonly (for builder mode)
         builderAppId: jotai.PrimitiveAtom<string>; // app being edited in builder mode
-        waveWindowType: jotai.Atom<"tab" | "builder">; // derived from builderId
-        client: jotai.Atom<Client>; // driven from WOS
         uiContext: jotai.Atom<UIContext>; // driven from windowId, tabId
-        waveWindow: jotai.Atom<WaveWindow>; // driven from WOS
-        workspace: jotai.Atom<Workspace>; // driven from WOS
+        workspaceId: jotai.Atom<string>; // derived from window WOS object
+        workspace: jotai.Atom<Workspace>; // driven from workspaceId via WOS
         fullConfigAtom: jotai.PrimitiveAtom<FullConfigType>; // driven from WOS, settings -- updated via WebSocket
         waveaiModeConfigAtom: jotai.PrimitiveAtom<Record<string, AIModeConfigType>>; // resolved AI mode configs -- updated via WebSocket
         settingsAtom: jotai.Atom<SettingsType>; // derrived from fullConfig
         hasCustomAIPresetsAtom: jotai.Atom<boolean>; // derived from fullConfig
-        tabAtom: jotai.Atom<Tab>; // driven from WOS
+        hasConfigErrors: jotai.Atom<boolean>; // derived from fullConfig
         staticTabId: jotai.Atom<string>;
         isFullScreen: jotai.PrimitiveAtom<boolean>;
         zoomFactorAtom: jotai.PrimitiveAtom<number>;
         controlShiftDelayAtom: jotai.PrimitiveAtom<boolean>;
         prefersReducedMotionAtom: jotai.Atom<boolean>;
+        documentHasFocus: jotai.PrimitiveAtom<boolean>;
         updaterStatusAtom: jotai.PrimitiveAtom<UpdaterStatus>;
-        typeAheadModalAtom: jotai.PrimitiveAtom<TypeAheadModalType>;
         modalOpen: jotai.PrimitiveAtom<boolean>;
         allConnStatus: jotai.Atom<ConnStatus[]>;
-        flashErrors: jotai.PrimitiveAtom<FlashErrorType[]>;
-        notifications: jotai.PrimitiveAtom<NotificationType[]>;
-        notificationPopoverMode: jotai.Atom<boolean>;
         reinitVersion: jotai.PrimitiveAtom<number>;
-        isTermMultiInput: jotai.PrimitiveAtom<boolean>;
         waveAIRateLimitInfoAtom: jotai.PrimitiveAtom<RateLimitInfo>;
     };
-
-    type WritableWaveObjectAtom<T extends WaveObj> = jotai.WritableAtom<T, [value: T], void>;
 
     type ThrottledValueAtom<T> = jotai.WritableAtom<T, [update: jotai.SetStateAction<T>], void>;
 
@@ -58,6 +50,17 @@ declare global {
 
     type TabLayoutData = {
         blockId: string;
+    };
+
+    type GlobalInitOptions = {
+        tabId?: string;
+        platform: NodeJS.Platform;
+        windowId: string;
+        clientId: string;
+        environment: "electron" | "renderer";
+        primaryTabStartup?: boolean;
+        builderId?: string;
+        isPreview?: boolean;
     };
 
     type WaveInitOpts = {
@@ -91,7 +94,7 @@ declare global {
         showWorkspaceAppMenu: (workspaceId: string) => void; // workspace-appmenu-show
         showBuilderAppMenu: (builderId: string) => void; // builder-appmenu-show
         showContextMenu: (workspaceId: string, menu: ElectronContextMenuItem[]) => void; // contextmenu-show
-        onContextMenuClick: (callback: (id: string) => void) => void; // contextmenu-click
+        onContextMenuClick: (callback: (id: string | null) => void) => void; // contextmenu-click
         onNavigate: (callback: (url: string) => void) => void;
         onIframeNavigate: (callback: (url: string) => void) => void;
         downloadFile: (path: string) => void; // download
@@ -113,7 +116,7 @@ declare global {
         deleteWorkspace: (workspaceId: string) => void; // delete-workspace
         setActiveTab: (tabId: string) => void; // set-active-tab
         createTab: () => void; // create-tab
-        closeTab: (workspaceId: string, tabId: string) => void; // close-tab
+        closeTab: (workspaceId: string, tabId: string, confirmClose: boolean) => Promise<boolean>; // close-tab
         setWindowInitStatus: (status: "ready" | "wave-ready") => void; // set-window-init-status
         onWaveInit: (callback: (initOpts: WaveInitOpts) => void) => void; // wave-init
         onBuilderInit: (callback: (initOpts: BuilderInitOpts) => void) => void; // builder-init
@@ -125,11 +128,14 @@ declare global {
         clearWebviewStorage: (webContentsId: number) => Promise<void>; // clear-webview-storage
         setWaveAIOpen: (isOpen: boolean) => void; // set-waveai-open
         closeBuilderWindow: () => void; // close-builder-window
-        incrementTermCommands: () => void; // increment-term-commands
+        incrementTermCommands: (opts?: { isRemote?: boolean; isWsl?: boolean; isDurable?: boolean }) => void; // increment-term-commands
         nativePaste: () => void; // native-paste
         openBuilder: (appId?: string) => void; // open-builder
         setBuilderWindowAppId: (appId: string) => void; // set-builder-window-appid
         doRefresh: () => void; // do-refresh
+        getPathForFile: (file: File) => string; // webUtils.getPathForFile
+        saveTextFile: (fileName: string, content: string) => Promise<boolean>; // save-text-file
+        setIsActive: () => Promise<void>; // set-is-active
     };
 
     type ElectronContextMenuItem = {
@@ -273,6 +279,7 @@ declare global {
         resultsIndex: PrimitiveAtom<number>;
         resultsCount: PrimitiveAtom<number>;
         isOpen: PrimitiveAtom<boolean>;
+        focusInput: PrimitiveAtom<number>;
         regex?: PrimitiveAtom<boolean>;
         caseSensitive?: PrimitiveAtom<boolean>;
         wholeWord?: PrimitiveAtom<boolean>;
@@ -287,23 +294,34 @@ declare global {
 
     declare type ViewComponent = React.FC<ViewComponentProps>;
 
-    type ViewModelClass = new (blockId: string, nodeModel: BlockNodeModel) => ViewModel;
+    type ViewModelInitType = {
+        blockId: string;
+        nodeModel: BlockNodeModel;
+        tabModel: TabModel;
+        waveEnv: WaveEnv;
+    };
+
+    type ViewModelClass = new (initOpts: ViewModelInitType) => ViewModel;
 
     interface ViewModel {
         // The type of view, used for identifying and rendering the appropriate component.
         viewType: string;
 
+        useTermHeader?: jotai.Atom<boolean>;
+
+        hideViewName?: jotai.Atom<boolean>;
+
         // Icon representing the view, can be a string or an IconButton declaration.
         viewIcon?: jotai.Atom<string | IconButtonDecl>;
-
-        // Optional color for the view icon.
-        viewIconColor?: jotai.Atom<string>;
 
         // Display name for the view, used in UI headers.
         viewName?: jotai.Atom<string>;
 
         // Optional header text or elements for the view.
         viewText?: jotai.Atom<string | HeaderElem[]>;
+
+        termDurableStatus?: jotai.Atom<BlockJobStatusData | null>;
+        termConfigedDurable?: jotai.Atom<null | boolean>;
 
         // Icon button displayed before the title in the header.
         preIconButton?: jotai.Atom<IconButtonDecl>;
@@ -321,9 +339,6 @@ declare global {
 
         // If true, filters out 'nowsh' connections (when managing connections)
         filterOutNowsh?: jotai.Atom<boolean>;
-
-        // if true, show s3 connections in picker
-        showS3?: jotai.Atom<boolean>;
 
         // If true, removes padding inside the block content area.
         noPadding?: jotai.Atom<boolean>;
@@ -399,35 +414,6 @@ declare global {
     type MarkdownResolveOpts = {
         connName: string;
         baseDir: string;
-    };
-
-    type FlashErrorType = {
-        id: string;
-        icon: string;
-        title: string;
-        message: string;
-        expiration: number;
-    };
-
-    export type NotificationActionType = {
-        label: string;
-        actionKey: string;
-        rightIcon?: string;
-        color?: "green" | "grey";
-        disabled?: boolean;
-    };
-
-    export type NotificationType = {
-        id?: string;
-        icon: string;
-        title: string;
-        message: string;
-        timestamp: string;
-        expiration?: number;
-        hidden?: boolean;
-        actions?: NotificationActionType[];
-        persistent?: boolean;
-        type?: "error" | "update" | "info" | "warning";
     };
 
     interface AbstractWshClient {

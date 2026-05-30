@@ -3,9 +3,11 @@
 
 import { Button } from "@/app/element/button";
 import { CenteredDiv } from "@/app/element/quickelems";
+import { globalStore } from "@/app/store/jotaiStore";
 import { getWebServerEndpoint } from "@/util/endpoints";
 import { formatRemoteUri } from "@/util/waveutil";
 import { useAtomValue } from "jotai";
+import { useEffect } from "react";
 import { TransformComponent, TransformWrapper, useControls } from "react-zoom-pan-pinch";
 import type { SpecializedViewProps } from "./preview";
 
@@ -45,15 +47,20 @@ function StreamingImagePreview({ url }: { url: string }) {
 }
 
 function StreamingPreview({ model }: SpecializedViewProps) {
+    useEffect(() => {
+        model.refreshCallback = () => {
+            globalStore.set(model.refreshVersion, (v) => v + 1);
+        };
+        return () => {
+            model.refreshCallback = null;
+        };
+    }, []);
     const conn = useAtomValue(model.connection);
     const fileInfo = useAtomValue(model.statFile);
     const filePath = fileInfo.path;
     const remotePath = formatRemoteUri(filePath, conn);
     const usp = new URLSearchParams();
     usp.set("path", remotePath);
-    if (conn != null) {
-        usp.set("connection", conn);
-    }
     const streamingUrl = `${getWebServerEndpoint()}/wave/stream-file?${usp.toString()}`;
     if (fileInfo.mimetype === "application/pdf") {
         return (
@@ -65,18 +72,14 @@ function StreamingPreview({ model }: SpecializedViewProps) {
     if (fileInfo.mimetype.startsWith("video/")) {
         return (
             <div className="flex flex-row h-full overflow-hidden items-center justify-center">
-                <video controls className="w-full h-full p-[10px] object-contain">
-                    <source src={streamingUrl} />
-                </video>
+                <video controls src={streamingUrl} className="w-full h-full p-[10px] object-contain" />
             </div>
         );
     }
     if (fileInfo.mimetype.startsWith("audio/")) {
         return (
             <div className="flex flex-row h-full overflow-hidden items-center justify-center">
-                <audio controls className="w-full h-full p-[10px] object-contain">
-                    <source src={streamingUrl} />
-                </audio>
+                <audio controls src={streamingUrl} className="w-full h-full p-[10px] object-contain" />
             </div>
         );
     }

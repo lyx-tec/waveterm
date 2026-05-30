@@ -1,7 +1,6 @@
-// Copyright 2025, Command Line Inc.
+// Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { BlockNodeModel } from "@/app/block/blocktypes";
 import { globalStore, WOS } from "@/app/store/global";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
@@ -15,11 +14,11 @@ class HelpViewModel extends WebViewModel {
         return HelpView;
     }
 
-    constructor(blockId: string, nodeModel: BlockNodeModel) {
-        super(blockId, nodeModel);
+    constructor(initOpts: ViewModelInitType) {
+        super(initOpts);
         this.viewText = atom((get) => {
             // force a dependency on meta.url so we re-render the buttons when the url changes
-            get(this.blockAtom)?.meta?.url || get(this.homepageUrl);
+            void (get(this.blockAtom)?.meta?.url || get(this.homepageUrl));
             return [
                 {
                     elemtype: "iconbutton",
@@ -72,6 +71,7 @@ class HelpViewModel extends WebViewModel {
         if (globalStore.get(this.domReady)) {
             curZoom = this.webviewRef.current?.getZoomFactor() || 1;
         }
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
         const model = this; // for the closure to work (this is getting unset)
         function makeZoomFactorMenuItem(label: string, factor: number): ContextMenuItem {
             return {

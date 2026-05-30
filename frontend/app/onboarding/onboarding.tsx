@@ -1,24 +1,25 @@
-// Copyright 2025, Command Line Inc.
+// Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
 import Logo from "@/app/asset/logo.svg";
 import { Button } from "@/app/element/button";
 import { FlexiModal } from "@/app/modals/modal";
-import { disableGlobalKeybindings, enableGlobalKeybindings, globalRefocus } from "@/app/store/keymodel";
-import { WorkspaceLayoutModel } from "@/app/workspace/workspace-layout-model";
-import * as services from "@/store/services";
-import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import { useEffect, useRef, useState } from "react";
-import { debounce } from "throttle-debounce";
-
+import { OnboardingGradientBg } from "@/app/onboarding/onboarding-common";
 import { OnboardingFeatures } from "@/app/onboarding/onboarding-features";
-import { atoms, globalStore } from "@/app/store/global";
+import { ClientModel } from "@/app/store/client-model";
+import { useSettingsKeyAtom } from "@/app/store/global";
+import { disableGlobalKeybindings, enableGlobalKeybindings, globalRefocus } from "@/app/store/keymodel";
 import { modalsModel } from "@/app/store/modalmodel";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { WorkspaceLayoutModel } from "@/app/workspace/workspace-layout-model";
+import * as services from "@/store/services";
 import { fireAndForget } from "@/util/util";
 import { atom, PrimitiveAtom, useAtom, useAtomValue, useSetAtom } from "jotai";
+import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
+import { useEffect, useRef, useState } from "react";
+import { debounce } from "throttle-debounce";
 
 // Page flow:
 //   init -> (telemetry enabled) -> features
@@ -28,15 +29,37 @@ type PageName = "init" | "notelemetrystar" | "features";
 
 const pageNameAtom: PrimitiveAtom<PageName> = atom<PageName>("init");
 
-const InitPage = ({ isCompact }: { isCompact: boolean }) => {
-    const settings = useAtomValue(atoms.settingsAtom);
-    const clientData = useAtomValue(atoms.client);
-    const [telemetryEnabled, setTelemetryEnabled] = useState<boolean>(!!settings["telemetry:enabled"]);
+const InitPage = ({
+    isCompact,
+    telemetryUpdateFn,
+}: {
+    isCompact: boolean;
+    telemetryUpdateFn: (value: boolean) => Promise<void>;
+}) => {
+    const telemetrySetting = useSettingsKeyAtom("telemetry:enabled");
+    const clientData = useAtomValue(ClientModel.getInstance().clientAtom);
+    const [telemetryEnabled, setTelemetryEnabled] = useState<boolean>(!!telemetrySetting);
     const setPageName = useSetAtom(pageNameAtom);
 
+    const handleStarClick = async () => {
+        RpcApi.RecordTEventCommand(
+            TabRpcClient,
+            {
+                event: "onboarding:githubstar",
+                props: { "onboarding:githubstar": "star", "onboarding:page": "init" },
+            },
+            { noresponse: true }
+        );
+        const clientId = ClientModel.getInstance().clientId;
+        await RpcApi.SetMetaCommand(TabRpcClient, {
+            oref: WOS.makeORef("client", clientId),
+            meta: { "onboarding:githubstar": true },
+        });
+    };
+
     const acceptTos = () => {
-        if (!clientData.tosagreed) {
-            fireAndForget(services.ClientService.AgreeTos);
+        if (!clientData?.tosagreed) {
+            fireAndForget(() => services.ClientService.AgreeTos());
         }
         if (telemetryEnabled) {
             WorkspaceLayoutModel.getInstance().setAIPanelVisible(true);
@@ -46,7 +69,7 @@ const InitPage = ({ isCompact }: { isCompact: boolean }) => {
 
     const setTelemetry = (value: boolean) => {
         fireAndForget(() =>
-            services.ClientService.TelemetryUpdate(value).then(() => {
+            telemetryUpdateFn(value).then(() => {
                 setTelemetryEnabled(value);
             })
         );
@@ -74,7 +97,9 @@ const InitPage = ({ isCompact }: { isCompact: boolean }) => {
                             <a
                                 target="_blank"
                                 href="https://github.com/wavetermdev/waveterm?ref=install"
-                                rel={"noopener"}
+                                rel="noopener"
+                                className="text-accent"
+                                onClick={handleStarClick}
                             >
                                 <i className="text-[32px] text-white/50 fa-brands fa-github"></i>
                             </a>
@@ -82,12 +107,14 @@ const InitPage = ({ isCompact }: { isCompact: boolean }) => {
                         <div className="flex flex-col items-start gap-1 flex-1">
                             <div className="text-foreground text-base leading-[18px]">Support us on GitHub</div>
                             <div className="text-secondary leading-5">
-                                We're <i>open source</i> and committed to providing a free terminal for individual
-                                users. Please show your support by giving us a star on{" "}
+                                We're <i>open source</i>, <i>open-model</i>, and committed to providing a free terminal
+                                for individual users. Please show your support by giving us a star on{" "}
                                 <a
                                     target="_blank"
                                     href="https://github.com/wavetermdev/waveterm?ref=install"
-                                    rel={"noopener"}
+                                    rel="noopener"
+                                    className="text-accent"
+                                    onClick={handleStarClick}
                                 >
                                     Github&nbsp;(wavetermdev/waveterm)
                                 </a>
@@ -96,7 +123,12 @@ const InitPage = ({ isCompact }: { isCompact: boolean }) => {
                     </div>
                     <div className="flex w-full items-center gap-[18px]">
                         <div>
-                            <a target="_blank" href="https://discord.gg/XfvZ334gwU" rel={"noopener"}>
+                            <a
+                                target="_blank"
+                                href="https://discord.gg/XfvZ334gwU"
+                                rel="noopener"
+                                className="text-accent"
+                            >
                                 <i className="text-[25px] text-white/50 fa-solid fa-people-group"></i>
                             </a>
                         </div>
@@ -106,7 +138,12 @@ const InitPage = ({ isCompact }: { isCompact: boolean }) => {
                                 Get help, submit feature requests, report bugs, or just chat with fellow terminal
                                 enthusiasts.
                                 <br />
-                                <a target="_blank" href="https://discord.gg/XfvZ334gwU" rel={"noopener"}>
+                                <a
+                                    target="_blank"
+                                    href="https://discord.gg/XfvZ334gwU"
+                                    rel="noopener"
+                                    className="text-accent"
+                                >
                                     Join the Wave&nbsp;Discord&nbsp;Channel
                                 </a>
                             </div>
@@ -121,7 +158,7 @@ const InitPage = ({ isCompact }: { isCompact: boolean }) => {
                                 Anonymous usage data helps us improve features you use.
                                 <br />
                                 <a
-                                    className="plain-link"
+                                    className="text-secondary! hover:underline!"
                                     target="_blank"
                                     href="https://waveterm.dev/privacy"
                                     rel="noopener"
@@ -157,7 +194,15 @@ const NoTelemetryStarPage = ({ isCompact }: { isCompact: boolean }) => {
     const setPageName = useSetAtom(pageNameAtom);
 
     const handleStarClick = async () => {
-        const clientId = globalStore.get(atoms.clientId);
+        RpcApi.RecordTEventCommand(
+            TabRpcClient,
+            {
+                event: "onboarding:githubstar",
+                props: { "onboarding:githubstar": "star", "onboarding:page": "notelemetry" },
+            },
+            { noresponse: true }
+        );
+        const clientId = ClientModel.getInstance().clientId;
         await RpcApi.SetMetaCommand(TabRpcClient, {
             oref: WOS.makeORef("client", clientId),
             meta: { "onboarding:githubstar": true },
@@ -167,7 +212,15 @@ const NoTelemetryStarPage = ({ isCompact }: { isCompact: boolean }) => {
     };
 
     const handleMaybeLater = async () => {
-        const clientId = globalStore.get(atoms.clientId);
+        RpcApi.RecordTEventCommand(
+            TabRpcClient,
+            {
+                event: "onboarding:githubstar",
+                props: { "onboarding:githubstar": "later", "onboarding:page": "notelemetry" },
+            },
+            { noresponse: true }
+        );
+        const clientId = ClientModel.getInstance().clientId;
         await RpcApi.SetMetaCommand(TabRpcClient, {
             oref: WOS.makeORef("client", clientId),
             meta: { "onboarding:githubstar": false },
@@ -227,7 +280,7 @@ const FeaturesPage = () => {
 const NewInstallOnboardingModal = () => {
     const modalRef = useRef<HTMLDivElement | null>(null);
     const [pageName, setPageName] = useAtom(pageNameAtom);
-    const clientData = useAtomValue(atoms.client);
+    const clientData = useAtomValue(ClientModel.getInstance().clientAtom);
     const [isCompact, setIsCompact] = useState<boolean>(window.innerHeight < 800);
 
     const updateModalHeight = () => {
@@ -272,7 +325,7 @@ const NewInstallOnboardingModal = () => {
     let pageComp: React.JSX.Element = null;
     switch (pageName) {
         case "init":
-            pageComp = <InitPage isCompact={isCompact} />;
+            pageComp = <InitPage isCompact={isCompact} telemetryUpdateFn={(value) => services.ClientService.TelemetryUpdate(value)} />;
             break;
         case "notelemetrystar":
             pageComp = <NoTelemetryStarPage isCompact={isCompact} />;
@@ -290,7 +343,7 @@ const NewInstallOnboardingModal = () => {
 
     return (
         <FlexiModal className={`${widthClass} rounded-[10px] ${paddingClass} relative overflow-hidden`} ref={modalRef}>
-            <div className="absolute inset-0 bg-gradient-to-br from-accent/[0.25] via-transparent to-accent/[0.05] pointer-events-none rounded-[10px]" />
+            <OnboardingGradientBg />
             <div className="flex flex-col w-full h-full relative z-10">{pageComp}</div>
         </FlexiModal>
     );
@@ -298,4 +351,4 @@ const NewInstallOnboardingModal = () => {
 
 NewInstallOnboardingModal.displayName = "NewInstallOnboardingModal";
 
-export { NewInstallOnboardingModal };
+export { InitPage, NewInstallOnboardingModal, NoTelemetryStarPage };

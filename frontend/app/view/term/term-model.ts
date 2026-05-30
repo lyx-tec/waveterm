@@ -1,54 +1,65 @@
-// Copyright 2025, Command Line Inc.
+// Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { WaveAIModel } from "@/app/aipanel/waveai-model";
 import { BlockNodeModel } from "@/app/block/blocktypes";
 import { appHandleKeyDown } from "@/app/store/keymodel";
-import { waveEventSubscribe } from "@/app/store/wps";
+import { modalsModel } from "@/app/store/modalmodel";
+import type { TabModel } from "@/app/store/tab-model";
+import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { makeFeBlockRouteId } from "@/app/store/wshrouter";
 import { DefaultRouter, TabRpcClient } from "@/app/store/wshrpcutil";
-import { TerminalView } from "@/app/view/term/term";
+import { TermClaudeIcon, TerminalView } from "@/app/view/term/term";
 import { TermWshClient } from "@/app/view/term/term-wsh";
 import { VDomModel } from "@/app/view/vdom/vdom-model";
 import { WorkspaceLayoutModel } from "@/app/workspace/workspace-layout-model";
 import {
     atoms,
+    createBlock,
+    createBlockSplitHorizontally,
+    createBlockSplitVertically,
     getAllBlockComponentModels,
     getApi,
     getBlockComponentModel,
     getBlockMetaKeyAtom,
+    getBlockTermDurableAtom,
     getConnStatusAtom,
     getOverrideConfigAtom,
     getSettingsKeyAtom,
     globalStore,
+    readAtom,
+    recordTEvent,
     useBlockAtom,
     WOS,
 } from "@/store/global";
 import * as services from "@/store/services";
 import * as keyutil from "@/util/keyutil";
 import { isMacOS, isWindows } from "@/util/platformutil";
-import { boundNumber, stringToBase64 } from "@/util/util";
+import { boundNumber, fireAndForget, stringToBase64 } from "@/util/util";
 import * as jotai from "jotai";
 import * as React from "react";
 import { getBlockingCommand } from "./shellblocking";
-import { computeTheme, DefaultTermTheme } from "./termutil";
-import { TermWrap } from "./termwrap";
+import { computeTheme, DefaultTermTheme, isLikelyOnSameHost, trimTerminalSelection } from "./termutil";
+import { TermWrap, WebGLSupported } from "./termwrap";
 
 export class TermViewModel implements ViewModel {
     viewType: string;
     nodeModel: BlockNodeModel;
+    tabModel: TabModel;
     connected: boolean;
     termRef: React.RefObject<TermWrap> = { current: null };
     blockAtom: jotai.Atom<Block>;
     termMode: jotai.Atom<string>;
     blockId: string;
-    viewIcon: jotai.Atom<string>;
+    viewIcon: jotai.Atom<IconButtonDecl>;
     viewName: jotai.Atom<string>;
     viewText: jotai.Atom<HeaderElem[]>;
     blockBg: jotai.Atom<MetaType>;
     manageConnection: jotai.Atom<boolean>;
     filterOutNowsh?: jotai.Atom<boolean>;
     connStatus: jotai.Atom<ConnStatus>;
+    useTermHeader: jotai.Atom<boolean>;
     termWshClient: TermWshClient;
     vdomBlockId: jotai.Atom<string>;
     vdomToolbarBlockId: jotai.Atom<string>;
@@ -62,14 +73,22 @@ export class TermViewModel implements ViewModel {
     shellProcFullStatus: jotai.PrimitiveAtom<BlockControllerRuntimeStatus>;
     shellProcStatus: jotai.Atom<string>;
     shellProcStatusUnsubFn: () => void;
+    blockJobStatusAtom: jotai.PrimitiveAtom<BlockJobStatusData>;
+    blockJobStatusVersionTs: number;
+    blockJobStatusUnsubFn: () => void;
     termBPMUnsubFn: () => void;
+    termCursorUnsubFn: () => void;
+    termCursorBlinkUnsubFn: () => void;
     isCmdController: jotai.Atom<boolean>;
     isRestarting: jotai.PrimitiveAtom<boolean>;
+    termDurableStatus: jotai.Atom<BlockJobStatusData | null>;
+    termConfigedDurable: jotai.Atom<null | boolean>;
     searchAtoms?: SearchAtoms;
 
-    constructor(blockId: string, nodeModel: BlockNodeModel) {
+    constructor({ blockId, nodeModel, tabModel }: ViewModelInitType) {
         this.viewType = "term";
         this.blockId = blockId;
+        this.tabModel = tabModel;
         this.termWshClient = new TermWshClient(blockId, this);
         DefaultRouter.registerRoute(makeFeBlockRouteId(blockId), this.termWshClient);
         this.nodeModel = nodeModel;
@@ -91,12 +110,9 @@ export class TermViewModel implements ViewModel {
         this.viewIcon = jotai.atom((get) => {
             const termMode = get(this.termMode);
             if (termMode == "vdom") {
-                return "bolt";
+                return { elemtype: "iconbutton", icon: "bolt" };
             }
-            const isCmd = get(this.isCmdController);
-            if (isCmd) {
-            }
-            return "terminal";
+            return { elemtype: "iconbutton", icon: "terminal" };
         });
         this.viewName = jotai.atom((get) => {
             const blockData = get(this.blockAtom);
@@ -107,7 +123,7 @@ export class TermViewModel implements ViewModel {
             if (blockData?.meta?.controller == "cmd") {
                 return "";
             }
-            return "Terminal";
+            return "";
         });
         this.viewText = jotai.atom((get) => {
             const termMode = get(this.termMode);
@@ -139,7 +155,7 @@ export class TermViewModel implements ViewModel {
             if (isCmd) {
                 const blockMeta = get(this.blockAtom)?.meta;
                 let cmdText = blockMeta?.["cmd"];
-                let cmdArgs = blockMeta?.["cmd:args"];
+                const cmdArgs = blockMeta?.["cmd:args"];
                 if (cmdArgs != null && Array.isArray(cmdArgs) && cmdArgs.length > 0) {
                     cmdText += " " + cmdArgs.join(" ");
                 }
@@ -181,7 +197,7 @@ export class TermViewModel implements ViewModel {
                     }
                 }
             }
-            const isMI = get(atoms.isTermMultiInput);
+            const isMI = get(this.tabModel.isTermMultiInput);
             if (isMI && this.isBasicTerm(get)) {
                 rtn.push({
                     elemtype: "textbutton",
@@ -189,13 +205,24 @@ export class TermViewModel implements ViewModel {
                     className: "yellow !py-[2px] !px-[10px] text-[11px] font-[500]",
                     title: "Input will be sent to all connected terminals (click to disable)",
                     onClick: () => {
-                        globalStore.set(atoms.isTermMultiInput, false);
+                        globalStore.set(this.tabModel.isTermMultiInput, false);
                     },
                 });
             }
             return rtn;
         });
         this.manageConnection = jotai.atom((get) => {
+            const termMode = get(this.termMode);
+            if (termMode == "vdom") {
+                return false;
+            }
+            const isCmd = get(this.isCmdController);
+            if (isCmd) {
+                return false;
+            }
+            return true;
+        });
+        this.useTermHeader = jotai.atom((get) => {
             const termMode = get(this.termMode);
             if (termMode == "vdom") {
                 return false;
@@ -215,7 +242,7 @@ export class TermViewModel implements ViewModel {
         });
         this.termTransparencyAtom = useBlockAtom(blockId, "termtransparencyatom", () => {
             return jotai.atom<number>((get) => {
-                let value = get(getOverrideConfigAtom(this.blockId, "term:transparency")) ?? 0.5;
+                const value = get(getOverrideConfigAtom(this.blockId, "term:transparency")) ?? 0.5;
                 return boundNumber(value, 0, 1);
             });
         });
@@ -266,6 +293,13 @@ export class TermViewModel implements ViewModel {
                 }
             }
 
+            if (get(getSettingsKeyAtom("debug:webglstatus"))) {
+                const webglButton = this.getWebGlIconButton(get);
+                if (webglButton) {
+                    rtn.push(webglButton);
+                }
+            }
+
             if (blockData?.meta?.["controller"] != "cmd" && shellProcStatus != "done") {
                 return rtn;
             }
@@ -289,7 +323,7 @@ export class TermViewModel implements ViewModel {
                 const buttonDecl: IconButtonDecl = {
                     elemtype: "iconbutton",
                     icon: iconName,
-                    click: this.forceRestartController.bind(this),
+                    click: () => fireAndForget(() => this.forceRestartController()),
                     title: title,
                 };
                 rtn.push(buttonDecl);
@@ -305,22 +339,62 @@ export class TermViewModel implements ViewModel {
         initialShellProcStatus.then((rts) => {
             this.updateShellProcStatus(rts);
         });
-        this.shellProcStatusUnsubFn = waveEventSubscribe({
+        this.shellProcStatusUnsubFn = waveEventSubscribeSingle({
             eventType: "controllerstatus",
             scope: WOS.makeORef("block", blockId),
             handler: (event) => {
-                let bcRTS: BlockControllerRuntimeStatus = event.data;
-                this.updateShellProcStatus(bcRTS);
+                this.updateShellProcStatus(event.data);
             },
         });
         this.shellProcStatus = jotai.atom((get) => {
             const fullStatus = get(this.shellProcFullStatus);
             return fullStatus?.shellprocstatus ?? "init";
         });
+        this.termDurableStatus = jotai.atom((get) => {
+            const isDurable = get(getBlockTermDurableAtom(this.blockId));
+            if (!isDurable) {
+                return null;
+            }
+            const blockJobStatus = get(this.blockJobStatusAtom);
+            if (blockJobStatus?.jobid == null || blockJobStatus?.status == null) {
+                return null;
+            }
+            return blockJobStatus;
+        });
+        this.termConfigedDurable = getBlockTermDurableAtom(this.blockId);
+        this.blockJobStatusAtom = jotai.atom(null) as jotai.PrimitiveAtom<BlockJobStatusData>;
+        this.blockJobStatusVersionTs = 0;
+        const initialBlockJobStatus = RpcApi.BlockJobStatusCommand(TabRpcClient, blockId);
+        initialBlockJobStatus
+            .then((status) => {
+                this.handleBlockJobStatusUpdate(status);
+            })
+            .catch((error) => {
+                console.log("error getting initial block job status", error);
+            });
+        this.blockJobStatusUnsubFn = waveEventSubscribeSingle({
+            eventType: "block:jobstatus",
+            scope: `block:${blockId}`,
+            handler: (event) => {
+                this.handleBlockJobStatusUpdate(event.data);
+            },
+        });
         this.termBPMUnsubFn = globalStore.sub(this.termBPMAtom, () => {
             if (this.termRef.current?.terminal) {
                 const allowBPM = globalStore.get(this.termBPMAtom) ?? true;
                 this.termRef.current.terminal.options.ignoreBracketedPasteMode = !allowBPM;
+            }
+        });
+        const termCursorAtom = getOverrideConfigAtom(blockId, "term:cursor");
+        this.termCursorUnsubFn = globalStore.sub(termCursorAtom, () => {
+            if (this.termRef.current?.terminal) {
+                this.termRef.current.setCursorStyle(globalStore.get(termCursorAtom));
+            }
+        });
+        const termCursorBlinkAtom = getOverrideConfigAtom(blockId, "term:cursorblink");
+        this.termCursorBlinkUnsubFn = globalStore.sub(termCursorBlinkAtom, () => {
+            if (this.termRef.current?.terminal) {
+                this.termRef.current.setCursorBlink(globalStore.get(termCursorBlinkAtom) ?? false);
             }
         });
     }
@@ -330,10 +404,12 @@ export class TermViewModel implements ViewModel {
             return null;
         }
         const shellIntegrationStatus = get(this.termRef.current.shellIntegrationStatusAtom);
+        const claudeCodeActive = get(this.termRef.current.claudeCodeActiveAtom);
+        const icon = claudeCodeActive ? React.createElement(TermClaudeIcon) : "sparkles";
         if (shellIntegrationStatus == null) {
             return {
                 elemtype: "iconbutton",
-                icon: "sparkles",
+                icon,
                 className: "text-muted",
                 title: "No shell integration — Wave AI unable to run commands.",
                 noAction: true,
@@ -342,14 +418,16 @@ export class TermViewModel implements ViewModel {
         if (shellIntegrationStatus === "ready") {
             return {
                 elemtype: "iconbutton",
-                icon: "sparkles",
+                icon,
                 className: "text-accent",
                 title: "Shell ready — Wave AI can run commands in this terminal.",
                 noAction: true,
             };
         }
         if (shellIntegrationStatus === "running-command") {
-            let title = "Shell busy — Wave AI unable to run commands while another command is running.";
+            let title = claudeCodeActive
+                ? "Claude Code Detected"
+                : "Shell busy — Wave AI unable to run commands while another command is running.";
 
             if (this.termRef.current) {
                 const inAltBuffer = this.termRef.current.terminal?.buffer?.active?.type === "alternate";
@@ -362,13 +440,45 @@ export class TermViewModel implements ViewModel {
 
             return {
                 elemtype: "iconbutton",
-                icon: "sparkles",
+                icon,
                 className: "text-warning",
                 title: title,
                 noAction: true,
             };
         }
         return null;
+    }
+
+    getWebGlIconButton(get: jotai.Getter): IconButtonDecl | null {
+        if (!WebGLSupported) {
+            return {
+                elemtype: "iconbutton",
+                icon: "microchip",
+                iconColor: "var(--error-color)",
+                title: "WebGL not supported",
+                noAction: true,
+            };
+        }
+        if (!this.termRef.current?.webglEnabledAtom) {
+            return null;
+        }
+        const webglEnabled = get(this.termRef.current.webglEnabledAtom);
+        if (webglEnabled) {
+            return {
+                elemtype: "iconbutton",
+                icon: "microchip",
+                iconColor: "var(--success-color)",
+                title: "WebGL enabled (click to disable)",
+                click: () => this.toggleWebGl(),
+            };
+        }
+        return {
+            elemtype: "iconbutton",
+            icon: "microchip",
+            iconColor: "var(--secondary-text-color)",
+            title: "WebGL disabled (click to enable)",
+            click: () => this.toggleWebGl(),
+        };
     }
 
     get viewComponent(): ViewComponent {
@@ -411,11 +521,38 @@ export class TermViewModel implements ViewModel {
         });
     }
 
+    getTermRenderer(): "webgl" | "dom" {
+        return this.termRef.current?.getTermRenderer() ?? "dom";
+    }
+
+    isWebGlEnabled(): boolean {
+        return this.termRef.current?.isWebGlEnabled() ?? false;
+    }
+
+    toggleWebGl() {
+        if (!this.termRef.current) {
+            return;
+        }
+        const renderer = this.termRef.current.getTermRenderer() === "webgl" ? "dom" : "webgl";
+        this.termRef.current.setTermRenderer(renderer);
+    }
+
     triggerRestartAtom() {
         globalStore.set(this.isRestarting, true);
         setTimeout(() => {
             globalStore.set(this.isRestarting, false);
         }, 300);
+    }
+
+    handleBlockJobStatusUpdate(status: BlockJobStatusData) {
+        if (status?.versionts == null) {
+            return;
+        }
+        if (status.versionts <= this.blockJobStatusVersionTs) {
+            return;
+        }
+        this.blockJobStatusVersionTs = status.versionts;
+        globalStore.set(this.blockJobStatusAtom, status);
     }
 
     updateShellProcStatus(fullStatus: BlockControllerRuntimeStatus) {
@@ -454,12 +591,11 @@ export class TermViewModel implements ViewModel {
 
     dispose() {
         DefaultRouter.unregisterRoute(makeFeBlockRouteId(this.blockId));
-        if (this.shellProcStatusUnsubFn) {
-            this.shellProcStatusUnsubFn();
-        }
-        if (this.termBPMUnsubFn) {
-            this.termBPMUnsubFn();
-        }
+        this.shellProcStatusUnsubFn?.();
+        this.blockJobStatusUnsubFn?.();
+        this.termBPMUnsubFn?.();
+        this.termCursorUnsubFn?.();
+        this.termCursorBlinkUnsubFn?.();
     }
 
     giveFocus(): boolean {
@@ -467,7 +603,7 @@ export class TermViewModel implements ViewModel {
             console.log("search is open, not giving focus");
             return true;
         }
-        let termMode = globalStore.get(this.termMode);
+        const termMode = globalStore.get(this.termMode);
         if (termMode == "term") {
             if (this.termRef?.current?.terminal) {
                 this.termRef.current.terminal.focus();
@@ -478,6 +614,14 @@ export class TermViewModel implements ViewModel {
     }
 
     keyDownHandler(waveEvent: WaveKeyboardEvent): boolean {
+        if (keyutil.checkKeyPressed(waveEvent, "Ctrl:r")) {
+            const shellIntegrationStatus = readAtom(this.termRef?.current?.shellIntegrationStatusAtom);
+            if (shellIntegrationStatus === "ready") {
+                recordTEvent("action:term", { "action:type": "term:ctrlr" });
+            }
+            // just for telemetry, we allow this keybinding through, back to the terminal
+            return false;
+        }
         if (keyutil.checkKeyPressed(waveEvent, "Cmd:Escape")) {
             const blockAtom = WOS.getWaveObjectAtom<Block>(`block:${this.blockId}`);
             const blockData = globalStore.get(blockAtom);
@@ -487,6 +631,42 @@ export class TermViewModel implements ViewModel {
                 return;
             }
             this.setTermMode(newTermMode);
+            return true;
+        }
+        if (keyutil.checkKeyPressed(waveEvent, "Shift:End")) {
+            if (this.termRef?.current?.terminal) {
+                this.termRef.current.terminal.scrollToBottom();
+            }
+            return true;
+        }
+        if (keyutil.checkKeyPressed(waveEvent, "Shift:Home")) {
+            if (this.termRef?.current?.terminal) {
+                this.termRef.current.terminal.scrollToLine(0);
+            }
+            return true;
+        }
+        if (isMacOS() && keyutil.checkKeyPressed(waveEvent, "Cmd:End")) {
+            if (this.termRef?.current?.terminal) {
+                this.termRef.current.terminal.scrollToBottom();
+            }
+            return true;
+        }
+        if (isMacOS() && keyutil.checkKeyPressed(waveEvent, "Cmd:Home")) {
+            if (this.termRef?.current?.terminal) {
+                this.termRef.current.terminal.scrollToLine(0);
+            }
+            return true;
+        }
+        if (keyutil.checkKeyPressed(waveEvent, "Shift:PageDown")) {
+            if (this.termRef?.current?.terminal) {
+                this.termRef.current.terminal.scrollPages(1);
+            }
+            return true;
+        }
+        if (keyutil.checkKeyPressed(waveEvent, "Shift:PageUp")) {
+            if (this.termRef?.current?.terminal) {
+                this.termRef.current.terminal.scrollPages(-1);
+            }
             return true;
         }
         const blockData = globalStore.get(this.blockAtom);
@@ -502,16 +682,16 @@ export class TermViewModel implements ViewModel {
         if (isMacOS()) {
             return false;
         }
-        
+
         // Get the app:ctrlvpaste setting
         const ctrlVPasteAtom = getSettingsKeyAtom("app:ctrlvpaste");
         const ctrlVPasteSetting = globalStore.get(ctrlVPasteAtom);
-        
+
         // If setting is explicitly set, use it
         if (ctrlVPasteSetting != null) {
             return ctrlVPasteSetting;
         }
-        
+
         // Default behavior: Windows=true, Linux/other=false
         return isWindows();
     }
@@ -522,18 +702,25 @@ export class TermViewModel implements ViewModel {
             return true;
         }
 
-        // Handle Escape key during IME composition
-        if (keyutil.checkKeyPressed(waveEvent, "Escape")) {
-            if (this.termRef.current?.isComposing) {
-                // Reset composition state when Escape is pressed during composition
-                this.termRef.current.resetCompositionState();
-            }
-        }
-
         if (this.keyDownHandler(waveEvent)) {
             event.preventDefault();
             event.stopPropagation();
             return false;
+        }
+
+        if (isMacOS()) {
+            if (keyutil.checkKeyPressed(waveEvent, "Cmd:ArrowLeft")) {
+                this.sendDataToController("\x01"); // Ctrl-A (beginning of line)
+                event.preventDefault();
+                event.stopPropagation();
+                return false;
+            }
+            if (keyutil.checkKeyPressed(waveEvent, "Cmd:ArrowRight")) {
+                this.sendDataToController("\x05"); // Ctrl-E (end of line)
+                event.preventDefault();
+                event.stopPropagation();
+                return false;
+            }
         }
         if (keyutil.checkKeyPressed(waveEvent, "Shift:Enter")) {
             const shiftEnterNewlineAtom = getOverrideConfigAtom(this.blockId, "term:shiftenternewline");
@@ -545,7 +732,7 @@ export class TermViewModel implements ViewModel {
                 return false;
             }
         }
-        
+
         // Check for Ctrl-V paste (platform-dependent)
         if (this.shouldHandleCtrlVPaste() && keyutil.checkKeyPressed(waveEvent, "Ctrl:v")) {
             event.preventDefault();
@@ -553,7 +740,7 @@ export class TermViewModel implements ViewModel {
             getApi().nativePaste();
             return false;
         }
-        
+
         if (keyutil.checkKeyPressed(waveEvent, "Ctrl:Shift:v")) {
             event.preventDefault();
             event.stopPropagation();
@@ -563,9 +750,12 @@ export class TermViewModel implements ViewModel {
         } else if (keyutil.checkKeyPressed(waveEvent, "Ctrl:Shift:c")) {
             event.preventDefault();
             event.stopPropagation();
-            const sel = this.termRef.current?.terminal.getSelection();
+            let sel = this.termRef.current?.terminal.getSelection();
             if (!sel) {
                 return false;
+            }
+            if (globalStore.get(getSettingsKeyAtom("term:trimtrailingwhitespace")) !== false) {
+                sel = trimTerminalSelection(sel);
             }
             navigator.clipboard.writeText(sel);
             return false;
@@ -577,7 +767,7 @@ export class TermViewModel implements ViewModel {
         }
         const shellProcStatus = globalStore.get(this.shellProcStatus);
         if ((shellProcStatus == "done" || shellProcStatus == "init") && keyutil.checkKeyPressed(waveEvent, "Enter")) {
-            this.forceRestartController();
+            fireAndForget(() => this.forceRestartController());
             return false;
         }
         const appHandled = appHandleKeyDown(waveEvent);
@@ -596,22 +786,132 @@ export class TermViewModel implements ViewModel {
         });
     }
 
-    forceRestartController() {
+    async forceRestartController() {
         if (globalStore.get(this.isRestarting)) {
             return;
         }
         this.triggerRestartAtom();
+        await RpcApi.ControllerDestroyCommand(TabRpcClient, this.blockId);
         const termsize = {
             rows: this.termRef.current?.terminal?.rows,
             cols: this.termRef.current?.terminal?.cols,
         };
-        const prtn = RpcApi.ControllerResyncCommand(TabRpcClient, {
+        await RpcApi.ControllerResyncCommand(TabRpcClient, {
             tabid: globalStore.get(atoms.staticTabId),
             blockid: this.blockId,
             forcerestart: true,
             rtopts: { termsize: termsize },
         });
-        prtn.catch((e) => console.log("error controller resync (force restart)", e));
+    }
+
+    async restartSessionWithDurability(isDurable: boolean) {
+        await RpcApi.SetMetaCommand(TabRpcClient, {
+            oref: WOS.makeORef("block", this.blockId),
+            meta: { "term:durable": isDurable },
+        });
+        await RpcApi.ControllerDestroyCommand(TabRpcClient, this.blockId);
+        const termsize = {
+            rows: this.termRef.current?.terminal?.rows,
+            cols: this.termRef.current?.terminal?.cols,
+        };
+        await RpcApi.ControllerResyncCommand(TabRpcClient, {
+            tabid: globalStore.get(atoms.staticTabId),
+            blockid: this.blockId,
+            forcerestart: true,
+            rtopts: { termsize: termsize },
+        });
+    }
+
+    getContextMenuItems(): ContextMenuItem[] {
+        const menu: ContextMenuItem[] = [];
+        const hasSelection = this.termRef.current?.terminal?.hasSelection();
+        const selection = hasSelection ? this.termRef.current?.terminal.getSelection() : null;
+
+        if (hasSelection) {
+            menu.push({
+                label: "Copy",
+                click: () => {
+                    if (selection) {
+                        const text =
+                            globalStore.get(getSettingsKeyAtom("term:trimtrailingwhitespace")) !== false
+                                ? trimTerminalSelection(selection)
+                                : selection;
+                        navigator.clipboard.writeText(text);
+                    }
+                },
+            });
+            menu.push({ type: "separator" });
+            menu.push({
+                label: "Send to Wave AI",
+                click: () => {
+                    if (selection) {
+                        const aiModel = WaveAIModel.getInstance();
+                        aiModel.appendText(selection, true, { scrollToBottom: true });
+                        const layoutModel = WorkspaceLayoutModel.getInstance();
+                        if (!layoutModel.getAIPanelVisible()) {
+                            layoutModel.setAIPanelVisible(true);
+                        }
+                        aiModel.focusInput();
+                    }
+                },
+            });
+
+            menu.push({ type: "separator" });
+        }
+
+        const hoveredLinkUri = this.termRef.current?.hoveredLinkUri;
+        if (hoveredLinkUri) {
+            let hoveredURL: URL = null;
+            try {
+                hoveredURL = new URL(hoveredLinkUri);
+            } catch (e) {
+                // not a valid URL
+            }
+            if (hoveredURL) {
+                menu.push({
+                    label: hoveredURL.hostname ? "Open URL (" + hoveredURL.hostname + ")" : "Open URL",
+                    click: () => {
+                        createBlock({
+                            meta: {
+                                view: "web",
+                                url: hoveredURL.toString(),
+                            },
+                        });
+                    },
+                });
+                menu.push({
+                    label: "Open URL in External Browser",
+                    click: () => {
+                        getApi().openExternal(hoveredURL.toString());
+                    },
+                });
+                menu.push({ type: "separator" });
+            }
+        }
+
+        menu.push({
+            label: "Paste",
+            click: () => {
+                getApi().nativePaste();
+            },
+        });
+
+        menu.push({ type: "separator" });
+
+        const magnified = globalStore.get(this.nodeModel.isMagnified);
+        menu.push({
+            label: magnified ? "Un-Magnify Block" : "Magnify Block",
+            click: () => {
+                this.nodeModel.toggleMagnify();
+            },
+        });
+
+        menu.push({ type: "separator" });
+
+        const settingsItems = this.getSettingsMenuItems();
+        menu.push(...settingsItems);
+
+        return menu;
     }
 
     getSettingsMenuItems(): ContextMenuItem[] {
@@ -628,7 +928,91 @@ export class TermViewModel implements ViewModel {
         termThemeKeys.sort((a, b) => {
             return (termThemes[a]["display:order"] ?? 0) - (termThemes[b]["display:order"] ?? 0);
         });
+        const defaultTermBlockDef: BlockDef = {
+            meta: {
+                view: "term",
+                controller: "shell",
+            },
+        };
+
         const fullMenu: ContextMenuItem[] = [];
+        fullMenu.push({
+            label: "Split Horizontally",
+            click: () => {
+                const blockData = globalStore.get(this.blockAtom);
+                const blockDef: BlockDef = {
+                    meta: blockData?.meta || defaultTermBlockDef.meta,
+                };
+                createBlockSplitHorizontally(blockDef, this.blockId, "after");
+            },
+        });
+        fullMenu.push({
+            label: "Split Vertically",
+            click: () => {
+                const blockData = globalStore.get(this.blockAtom);
+                const blockDef: BlockDef = {
+                    meta: blockData?.meta || defaultTermBlockDef.meta,
+                };
+                createBlockSplitVertically(blockDef, this.blockId, "after");
+            },
+        });
+        fullMenu.push({ type: "separator" });
+
+        const lastCommand = globalStore.get(this.termRef?.current?.lastCommandAtom);
+        const cwd = blockData?.meta?.["cmd:cwd"];
+        const canShowFileBrowser = cwd != null && isLikelyOnSameHost(lastCommand);
+
+        if (canShowFileBrowser) {
+            fullMenu.push({
+                label: "File Browser",
+                click: () => {
+                    const blockData = globalStore.get(this.blockAtom);
+                    const connection = blockData?.meta?.connection;
+                    const cwd = blockData?.meta?.["cmd:cwd"];
+                    const meta: Record<string, any> = {
+                        view: "preview",
+                        file: cwd,
+                    };
+                    if (connection) {
+                        meta.connection = connection;
+                    }
+                    const blockDef: BlockDef = { meta };
+                    createBlock(blockDef);
+                },
+            });
+            fullMenu.push({ type: "separator" });
+        }
+
+        fullMenu.push({
+            label: "Save Session As...",
+            click: () => {
+                if (this.termRef.current) {
+                    const content = this.termRef.current.getScrollbackContent();
+                    if (content) {
+                        fireAndForget(async () => {
+                            try {
+                                const success = await getApi().saveTextFile("session.log", content);
+                                if (!success) {
+                                    console.log("Save scrollback cancelled by user");
+                                }
+                            } catch (error) {
+                                console.error("Failed to save scrollback:", error);
+                                const errorMessage = error?.message || "An unknown error occurred";
+                                modalsModel.pushModal("MessageModal", {
+                                    children: `Failed to save session scrollback: ${errorMessage}`,
+                                });
+                            }
+                        });
+                    } else {
+                        modalsModel.pushModal("MessageModal", {
+                            children: "No scrollback content to save.",
+                        });
+                    }
+                }
+            },
+        });
+        fullMenu.push({ type: "separator" });
+
         const submenu: ContextMenuItem[] = termThemeKeys.map((themeName) => {
             return {
                 label: termThemes[themeName]["display:name"] ?? themeName,
@@ -704,6 +1088,91 @@ export class TermViewModel implements ViewModel {
                 });
             },
         });
+        const overrideCursor = blockData?.meta?.["term:cursor"] as string | null | undefined;
+        const overrideCursorBlink = blockData?.meta?.["term:cursorblink"] as boolean | null | undefined;
+        const isCursorDefault = overrideCursor == null && overrideCursorBlink == null;
+        // normalize for comparison: null/undefined/"block" all mean "block"
+        const effectiveCursor = overrideCursor === "underline" || overrideCursor === "bar" ? overrideCursor : "block";
+        const effectiveCursorBlink = overrideCursorBlink === true;
+        const cursorSubMenu: ContextMenuItem[] = [
+            {
+                label: "Default",
+                type: "checkbox",
+                checked: isCursorDefault,
+                click: () => {
+                    RpcApi.SetMetaCommand(TabRpcClient, {
+                        oref: WOS.makeORef("block", this.blockId),
+                        meta: { "term:cursor": null, "term:cursorblink": null },
+                    });
+                },
+            },
+            {
+                label: "Block",
+                type: "checkbox",
+                checked: !isCursorDefault && effectiveCursor === "block" && !effectiveCursorBlink,
+                click: () => {
+                    RpcApi.SetMetaCommand(TabRpcClient, {
+                        oref: WOS.makeORef("block", this.blockId),
+                        meta: { "term:cursor": "block", "term:cursorblink": false },
+                    });
+                },
+            },
+            {
+                label: "Block (Blinking)",
+                type: "checkbox",
+                checked: !isCursorDefault && effectiveCursor === "block" && effectiveCursorBlink,
+                click: () => {
+                    RpcApi.SetMetaCommand(TabRpcClient, {
+                        oref: WOS.makeORef("block", this.blockId),
+                        meta: { "term:cursor": "block", "term:cursorblink": true },
+                    });
+                },
+            },
+            {
+                label: "Bar",
+                type: "checkbox",
+                checked: !isCursorDefault && effectiveCursor === "bar" && !effectiveCursorBlink,
+                click: () => {
+                    RpcApi.SetMetaCommand(TabRpcClient, {
+                        oref: WOS.makeORef("block", this.blockId),
+                        meta: { "term:cursor": "bar", "term:cursorblink": false },
+                    });
+                },
+            },
+            {
+                label: "Bar (Blinking)",
+                type: "checkbox",
+                checked: !isCursorDefault && effectiveCursor === "bar" && effectiveCursorBlink,
+                click: () => {
+                    RpcApi.SetMetaCommand(TabRpcClient, {
+                        oref: WOS.makeORef("block", this.blockId),
+                        meta: { "term:cursor": "bar", "term:cursorblink": true },
+                    });
+                },
+            },
+            {
+                label: "Underline",
+                type: "checkbox",
+                checked: !isCursorDefault && effectiveCursor === "underline" && !effectiveCursorBlink,
+                click: () => {
+                    RpcApi.SetMetaCommand(TabRpcClient, {
+                        oref: WOS.makeORef("block", this.blockId),
+                        meta: { "term:cursor": "underline", "term:cursorblink": false },
+                    });
+                },
+            },
+            {
+                label: "Underline (Blinking)",
+                type: "checkbox",
+                checked: !isCursorDefault && effectiveCursor === "underline" && effectiveCursorBlink,
+                click: () => {
+                    RpcApi.SetMetaCommand(TabRpcClient, {
+                        oref: WOS.makeORef("block", this.blockId),
+                        meta: { "term:cursor": "underline", "term:cursorblink": true },
+                    });
+                },
+            },
+        ];
         fullMenu.push({
             label: "Themes",
             submenu: submenu,
@@ -713,11 +1182,17 @@ export class TermViewModel implements ViewModel {
             submenu: fontSizeSubMenu,
         });
         fullMenu.push({
+            label: "Cursor",
+            submenu: cursorSubMenu,
+        });
+        fullMenu.push({
             label: "Transparency",
             submenu: transparencySubMenu,
         });
+        fullMenu.push({ type: "separator" });
+        const advancedSubmenu: ContextMenuItem[] = [];
         const allowBracketedPaste = blockData?.meta?.["term:allowbracketedpaste"];
-        fullMenu.push({
+        advancedSubmenu.push({
             label: "Allow Bracketed Paste Mode",
             submenu: [
                 {
@@ -755,13 +1230,12 @@ export class TermViewModel implements ViewModel {
                 },
             ],
         });
-        fullMenu.push({ type: "separator" });
-        fullMenu.push({
+        advancedSubmenu.push({
             label: "Force Restart Controller",
-            click: this.forceRestartController.bind(this),
+            click: () => fireAndForget(() => this.forceRestartController()),
         });
         const isClearOnStart = blockData?.meta?.["cmd:clearonstart"];
-        fullMenu.push({
+        advancedSubmenu.push({
             label: "Clear Output On Restart",
             submenu: [
                 {
@@ -789,7 +1263,7 @@ export class TermViewModel implements ViewModel {
             ],
         });
         const runOnStart = blockData?.meta?.["cmd:runonstart"];
-        fullMenu.push({
+        advancedSubmenu.push({
             label: "Run On Startup",
             submenu: [
                 {
@@ -816,17 +1290,8 @@ export class TermViewModel implements ViewModel {
                 },
             ],
         });
-        if (blockData?.meta?.["term:vdomtoolbarblockid"]) {
-            fullMenu.push({ type: "separator" });
-            fullMenu.push({
-                label: "Close Toolbar",
-                click: () => {
-                    RpcApi.DeleteSubBlockCommand(TabRpcClient, { blockid: blockData.meta["term:vdomtoolbarblockid"] });
-                },
-            });
-        }
         const debugConn = blockData?.meta?.["term:conndebug"];
-        fullMenu.push({
+        advancedSubmenu.push({
             label: "Debug Connection",
             submenu: [
                 {
@@ -864,6 +1329,43 @@ export class TermViewModel implements ViewModel {
                 },
             ],
         });
+
+        const isDurable = globalStore.get(getBlockTermDurableAtom(this.blockId));
+        if (isDurable) {
+            advancedSubmenu.push({
+                label: "Session Durability",
+                submenu: [
+                    {
+                        label: "Restart Session in Standard Mode",
+                        click: () => fireAndForget(() => this.restartSessionWithDurability(false)),
+                    },
+                ],
+            });
+        } else if (isDurable === false) {
+            advancedSubmenu.push({
+                label: "Session Durability",
+                submenu: [
+                    {
+                        label: "Restart Session in Durable Mode",
+                        click: () => fireAndForget(() => this.restartSessionWithDurability(true)),
+                    },
+                ],
+            });
+        }
+
+        fullMenu.push({
+            label: "Advanced",
+            submenu: advancedSubmenu,
+        });
+        if (blockData?.meta?.["term:vdomtoolbarblockid"]) {
+            fullMenu.push({ type: "separator" });
+            fullMenu.push({
+                label: "Close Toolbar",
+                click: () => {
+                    RpcApi.DeleteSubBlockCommand(TabRpcClient, { blockid: blockData.meta["term:vdomtoolbarblockid"] });
+                },
+            });
+        }
         return fullMenu;
     }
 }
@@ -880,8 +1382,4 @@ export function getAllBasicTermModels(): TermViewModel[] {
         }
     }
     return termModels;
-}
-
-export function makeTerminalModel(blockId: string, nodeModel: BlockNodeModel): TermViewModel {
-    return new TermViewModel(blockId, nodeModel);
 }

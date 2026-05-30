@@ -27,6 +27,7 @@ import (
 
 const MaxTzNameLen = 50
 const ActivityEventName = "app:activity"
+const WshRunEventName = "wsh:run"
 
 var cachedTosAgreedTs atomic.Int64
 
@@ -154,6 +155,9 @@ func mergeActivity(curActivity *telemetrydata.TEventProps, newActivity telemetry
 	curActivity.WaveAIActiveMinutes += newActivity.WaveAIActiveMinutes
 	curActivity.WaveAIFgMinutes += newActivity.WaveAIFgMinutes
 	curActivity.TermCommandsRun += newActivity.TermCommandsRun
+	curActivity.TermCommandsRemote += newActivity.TermCommandsRemote
+	curActivity.TermCommandsDurable += newActivity.TermCommandsDurable
+	curActivity.TermCommandsWsl += newActivity.TermCommandsWsl
 	if newActivity.AppFirstDay {
 		curActivity.AppFirstDay = true
 	}
@@ -162,7 +166,7 @@ func mergeActivity(curActivity *telemetrydata.TEventProps, newActivity telemetry
 // ignores the timestamp in tevent, and uses the current time
 func updateActivityTEvent(ctx context.Context, tevent *telemetrydata.TEvent) error {
 	eventTs := time.Now()
-	// compute to hour boundary, and round up to next hour
+	// compute to 1-hour boundary, and round up to next 1-hour boundary
 	eventTs = eventTs.Truncate(time.Hour).Add(time.Hour)
 
 	return wstore.WithTx(ctx, func(tx *wstore.TxWrap) error {
@@ -188,6 +192,44 @@ func updateActivityTEvent(ctx context.Context, tevent *telemetrydata.TEvent) err
 			query := `INSERT INTO db_tevent (uuid, ts, tslocal, event, props) VALUES (?, ?, ?, ?, ?)`
 			tsLocal := utilfn.ConvertToWallClockPT(eventTs).Format(time.RFC3339)
 			tx.Exec(query, uuid.New().String(), eventTs.UnixMilli(), tsLocal, ActivityEventName, dbutil.QuickJson(curActivity))
+		}
+		return nil
+	})
+}
+
+// aggregates wsh:run events per (cmd, haderror) key within the current 1-hour bucket
+func updateWshRunTEvent(ctx context.Context, tevent *telemetrydata.TEvent) error {
+	eventTs := time.Now().Truncate(time.Hour).Add(time.Hour)
+	incomingCount := tevent.Props.WshCount
+	if incomingCount <= 0 {
+		incomingCount = 1
+	}
+	return wstore.WithTx(ctx, func(tx *wstore.TxWrap) error {
+		uuidStr := tx.GetString(
+			`SELECT uuid FROM db_tevent WHERE ts = ? AND event = ? AND json_extract(props, '$."wsh:cmd"') IS ?`,
+			eventTs.UnixMilli(), WshRunEventName, tevent.Props.WshCmd,
+		)
+		if uuidStr != "" {
+			var curProps telemetrydata.TEventProps
+			rawProps := tx.GetString(`SELECT props FROM db_tevent WHERE uuid = ?`, uuidStr)
+			if rawProps != "" {
+				if err := json.Unmarshal([]byte(rawProps), &curProps); err != nil {
+					log.Printf("error unmarshalling wsh:run props: %v\n", err)
+				}
+			}
+			curCount := curProps.WshCount
+			if curCount <= 0 {
+				curCount = 1
+			}
+			curProps.WshCount = curCount + incomingCount
+			curProps.WshErrorCount += tevent.Props.WshErrorCount
+			tx.Exec(`UPDATE db_tevent SET props = ? WHERE uuid = ?`, dbutil.QuickJson(curProps), uuidStr)
+		} else {
+			newProps := tevent.Props
+			newProps.WshCount = incomingCount
+			tsLocal := utilfn.ConvertToWallClockPT(eventTs).Format(time.RFC3339)
+			tx.Exec(`INSERT INTO db_tevent (uuid, ts, tslocal, event, props) VALUES (?, ?, ?, ?, ?)`,
+				uuid.New().String(), eventTs.UnixMilli(), tsLocal, WshRunEventName, dbutil.QuickJson(newProps))
 		}
 		return nil
 	})
@@ -241,14 +283,23 @@ func RecordTEvent(ctx context.Context, tevent *telemetrydata.TEvent) error {
 	}
 	tevent.EnsureTimestamps()
 
-	// Set AppFirstDay if within first day of TOS agreement
+	// Set AppFirstDay if on same calendar day as TOS agreement
 	tosAgreedTs := GetTosAgreedTs()
-	if tosAgreedTs == 0 || (tosAgreedTs != 0 && time.Now().UnixMilli()-tosAgreedTs <= int64(24*60*60*1000)) {
+	if tosAgreedTs == 0 {
 		tevent.Props.AppFirstDay = true
+	} else {
+		tosYear, tosMonth, tosDay := time.UnixMilli(tosAgreedTs).Date()
+		nowYear, nowMonth, nowDay := time.Now().Date()
+		if tosYear == nowYear && tosMonth == nowMonth && tosDay == nowDay {
+			tevent.Props.AppFirstDay = true
+		}
 	}
 
 	if tevent.Event == ActivityEventName {
 		return updateActivityTEvent(ctx, tevent)
+	}
+	if tevent.Event == WshRunEventName {
+		return updateWshRunTEvent(ctx, tevent)
 	}
 	return insertTEvent(ctx, tevent)
 }

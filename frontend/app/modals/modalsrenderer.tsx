@@ -4,7 +4,9 @@
 import { NewInstallOnboardingModal } from "@/app/onboarding/onboarding";
 import { CurrentOnboardingVersion } from "@/app/onboarding/onboarding-common";
 import { UpgradeOnboardingModal } from "@/app/onboarding/onboarding-upgrade";
-import { atoms, globalPrimaryTabStartup, globalStore } from "@/store/global";
+import { ClientModel } from "@/app/store/client-model";
+import { globalStore } from "@/app/store/jotaiStore";
+import { atoms, globalPrimaryTabStartup } from "@/store/global";
 import { modalsModel } from "@/store/modalmodel";
 import * as jotai from "jotai";
 import { useEffect } from "react";
@@ -12,7 +14,7 @@ import * as semver from "semver";
 import { getModalComponent } from "./modalregistry";
 
 const ModalsRenderer = () => {
-    const clientData = jotai.useAtomValue(atoms.client);
+    const clientData = jotai.useAtomValue(ClientModel.getInstance().clientAtom);
     const [newInstallOnboardingOpen, setNewInstallOnboardingOpen] = jotai.useAtom(modalsModel.newInstallOnboardingOpen);
     const [upgradeOnboardingOpen, setUpgradeOnboardingOpen] = jotai.useAtom(modalsModel.upgradeOnboardingOpen);
     const [modals] = jotai.useAtom(modalsModel.modalsAtom);

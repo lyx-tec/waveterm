@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { globalStore } from "@/app/store/jotaiStore";
-import { waveEventSubscribe } from "@/app/store/wps";
+import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { atoms, getApi, WOS } from "@/store/global";
 import { base64ToString, stringToBase64 } from "@/util/util";
+import type { WebviewTag } from "electron";
 import { atom, type Atom, type PrimitiveAtom } from "jotai";
+import type * as MonacoTypes from "monaco-editor";
 import { debounce } from "throttle-debounce";
 
 export type TabType = "preview" | "files" | "code" | "secrets" | "configdata";
@@ -33,7 +35,8 @@ export class BuilderAppPanelModel {
     hasSecretsAtom: PrimitiveAtom<boolean> = atom<boolean>(false);
     saveNeededAtom!: Atom<boolean>;
     focusElemRef: { current: HTMLInputElement | null } = { current: null };
-    monacoEditorRef: { current: any | null } = { current: null };
+    monacoEditorRef: { current: MonacoTypes.editor.IStandaloneCodeEditor | null } = { current: null };
+    webviewRef: { current: WebviewTag | null } = { current: null };
     statusUnsubFn: (() => void) | null = null;
     appGoUpdateUnsubFn: (() => void) | null = null;
     debouncedRestart: (() => void) & { cancel: () => void };
@@ -78,11 +81,11 @@ export class BuilderAppPanelModel {
             this.statusUnsubFn();
         }
 
-        this.statusUnsubFn = waveEventSubscribe({
+        this.statusUnsubFn = waveEventSubscribeSingle({
             eventType: "builderstatus",
             scope: WOS.makeORef("builder", builderId),
             handler: (event) => {
-                const status: BuilderStatusData = event.data;
+                const status = event.data;
                 const currentStatus = globalStore.get(this.builderStatusAtom);
                 if (!currentStatus || !currentStatus.version || status.version > currentStatus.version) {
                     globalStore.set(this.builderStatusAtom, status);
@@ -104,7 +107,7 @@ export class BuilderAppPanelModel {
         await this.loadAppFile(appId);
         await this.loadEnvVars(builderId);
 
-        this.appGoUpdateUnsubFn = waveEventSubscribe({
+        this.appGoUpdateUnsubFn = waveEventSubscribeSingle({
             eventType: "waveapp:appgoupdated",
             scope: appId,
             handler: () => {
@@ -309,8 +312,17 @@ export class BuilderAppPanelModel {
         this.focusElemRef.current = ref;
     }
 
-    setMonacoEditorRef(ref: any) {
+    setMonacoEditorRef(ref: MonacoTypes.editor.IStandaloneCodeEditor | null) {
         this.monacoEditorRef.current = ref;
+    }
+
+    openPreviewDevTools() {
+        if (!this.webviewRef.current) return;
+        if (this.webviewRef.current.isDevToolsOpened()) {
+            this.webviewRef.current.closeDevTools();
+        } else {
+            this.webviewRef.current.openDevTools();
+        }
     }
 
     dispose() {

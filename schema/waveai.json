@@ -20,7 +20,9 @@
           "enum": [
             "wave",
             "google",
+            "groq",
             "openrouter",
+            "nanogpt",
             "openai",
             "azure",
             "azure-legacy",
@@ -46,7 +48,19 @@
             "high"
           ]
         },
+        "ai:verbosity": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "Text verbosity level (OpenAI Responses API only)"
+        },
         "ai:endpoint": {
+          "type": "string"
+        },
+        "ai:proxyurl": {
           "type": "string"
         },
         "ai:azureapiversion": {

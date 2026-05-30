@@ -34,6 +34,7 @@ const (
 	WaveDevVarName                 = "WAVETERM_DEV"
 	WaveDevViteVarName             = "WAVETERM_DEV_VITE"
 	WaveWshForceUpdateVarName      = "WAVETERM_WSHFORCEUPDATE"
+	WaveNoConfirmQuitVarName       = "WAVETERM_NOCONFIRMQUIT"
 
 	WaveJwtTokenVarName  = "WAVETERM_JWT"
 	WaveSwapTokenVarName = "WAVETERM_SWAPTOKEN"
@@ -59,7 +60,6 @@ const WaveLockFile = "wave.lock"
 const DomainSocketBaseName = "wave.sock"
 const RemoteDomainSocketBaseName = "wave-remote.sock"
 const WaveDBDir = "db"
-const JwtSecret = "waveterm" // TODO generate and store this
 const ConfigDir = "config"
 const RemoteWaveHomeDirName = ".waveterm"
 const RemoteWshBinDirName = "bin"
@@ -107,6 +107,7 @@ func CacheAndRemoveEnvVars() error {
 	Dev_VarCache = os.Getenv(WaveDevVarName)
 	os.Unsetenv(WaveDevVarName)
 	os.Unsetenv(WaveDevViteVarName)
+	os.Unsetenv(WaveNoConfirmQuitVarName)
 	return nil
 }
 
@@ -180,6 +181,12 @@ func ReplaceHomeDir(pathStr string) string {
 
 func GetDomainSocketName() string {
 	return filepath.Join(GetWaveDataDir(), DomainSocketBaseName)
+}
+
+// returns a Unix-style path for the remote socket (using fmt.Sprintf instead of filepath.Join
+// because this path is for a remote Unix system, not the local OS which might be Windows)
+func GetPersistentRemoteSockName(clientId string) string {
+	return fmt.Sprintf("~/.waveterm/client/%s/waveterm.sock", clientId)
 }
 
 func EnsureWaveDataDir() error {
@@ -339,6 +346,46 @@ func ClientArch() string {
 	return fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
 }
 
+func ClientPackageType() string {
+	if os.Getenv("SNAP") != "" {
+		return "snap"
+	}
+	if os.Getenv("APPIMAGE") != "" {
+		return "appimage"
+	}
+	return ""
+}
+
+var macOSVersionOnce = &sync.Once{}
+var cachedMacOSVersion string
+
+var macOSVersionRegex = regexp.MustCompile(`^(\d+\.\d+(?:\.\d+)?)`)
+
+func internalMacOSVersion() string {
+	ctx, cancelFn := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelFn()
+	out, err := exec.CommandContext(ctx, "sw_vers", "-productVersion").Output()
+	if err != nil {
+		return ""
+	}
+	versionStr := strings.TrimSpace(string(out))
+	m := macOSVersionRegex.FindStringSubmatch(versionStr)
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
+}
+
+func ClientMacOSVersion() string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	macOSVersionOnce.Do(func() {
+		cachedMacOSVersion = internalMacOSVersion()
+	})
+	return cachedMacOSVersion
+}
+
 var releaseRegex = regexp.MustCompile(`^(\d+\.\d+\.\d+)`)
 var osReleaseOnce = &sync.Once{}
 var osRelease string
@@ -427,4 +474,23 @@ func getSystemSummary(ctx context.Context) string {
 	default:
 		return fmt.Sprintf("%s (%s)", runtime.GOOS, runtime.GOARCH)
 	}
+}
+
+// job socket path on remote machine
+func GetRemoteJobSocketPath(jobId string) string {
+	socketDir := filepath.Join("/tmp", fmt.Sprintf("waveterm-%d", os.Getuid()))
+	return filepath.Join(socketDir, fmt.Sprintf("%s.sock", jobId))
+}
+
+// job file path on remote machine
+func GetRemoteJobFilePath(jobId string, extension string) string {
+	jobDir := GetRemoteJobLogDir()
+	return filepath.Join(jobDir, fmt.Sprintf("%s.%s", jobId, extension))
+}
+
+// job file dir on remote machines
+func GetRemoteJobLogDir() string {
+	homeDir := GetHomeDir()
+	jobDir := filepath.Join(homeDir, ".waveterm", "jobs")
+	return jobDir
 }

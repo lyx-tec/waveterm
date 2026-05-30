@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/wavetermdev/waveterm/pkg/aiusechat/aiutil"
@@ -27,7 +28,14 @@ const (
 func appendToLastUserMessage(messages []ChatRequestMessage, text string) {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" {
-			messages[i].Content += "\n\n" + text
+			if len(messages[i].ContentParts) > 0 {
+				messages[i].ContentParts = append(messages[i].ContentParts, ChatContentPart{
+					Type: "text",
+					Text: text,
+				})
+			} else {
+				messages[i].Content += "\n\n" + text
+			}
 			break
 		}
 	}
@@ -166,6 +174,21 @@ func ConvertAIMessageToStoredChatMessage(aiMsg uctypes.AIMessage) (*StoredChatMe
 		return nil, fmt.Errorf("invalid AIMessage: %w", err)
 	}
 
+	hasImages := false
+	for _, part := range aiMsg.Parts {
+		if strings.HasPrefix(part.MimeType, "image/") {
+			hasImages = true
+			break
+		}
+	}
+
+	if hasImages {
+		return convertAIMessageMultimodal(aiMsg)
+	}
+	return convertAIMessageTextOnly(aiMsg)
+}
+
+func convertAIMessageTextOnly(aiMsg uctypes.AIMessage) (*StoredChatMessage, error) {
 	var textBuilder strings.Builder
 	firstText := true
 	for _, part := range aiMsg.Parts {
@@ -208,6 +231,89 @@ func ConvertAIMessageToStoredChatMessage(aiMsg uctypes.AIMessage) (*StoredChatMe
 		Message: ChatRequestMessage{
 			Role:    "user",
 			Content: textBuilder.String(),
+		},
+	}, nil
+}
+
+func convertAIMessageMultimodal(aiMsg uctypes.AIMessage) (*StoredChatMessage, error) {
+	var contentParts []ChatContentPart
+	imageCount := 0
+	imageFailCount := 0
+
+	for _, part := range aiMsg.Parts {
+		switch {
+		case part.Type == uctypes.AIMessagePartTypeText:
+			if part.Text != "" {
+				contentParts = append(contentParts, ChatContentPart{
+					Type: "text",
+					Text: part.Text,
+				})
+			}
+
+		case strings.HasPrefix(part.MimeType, "image/"):
+			imageCount++
+			imageUrl, err := aiutil.ExtractImageUrl(part.Data, part.URL, part.MimeType)
+			if err != nil {
+				imageFailCount++
+				log.Printf("openaichat: error extracting image URL for %s: %v\n", part.FileName, err)
+				continue
+			}
+			contentParts = append(contentParts, ChatContentPart{
+				Type:       "image_url",
+				ImageUrl:   &ChatImageUrl{Url: imageUrl},
+				FileName:   part.FileName,
+				PreviewUrl: part.PreviewUrl,
+				MimeType:   part.MimeType,
+			})
+
+		case part.MimeType == "text/plain":
+			textData, err := aiutil.ExtractTextData(part.Data, part.URL)
+			if err != nil {
+				log.Printf("openaichat: error extracting text data for %s: %v\n", part.FileName, err)
+				continue
+			}
+			formattedText := aiutil.FormatAttachedTextFile(part.FileName, textData)
+			if formattedText != "" {
+				contentParts = append(contentParts, ChatContentPart{
+					Type: "text",
+					Text: formattedText,
+				})
+			}
+
+		case part.MimeType == "directory":
+			if len(part.Data) == 0 {
+				log.Printf("openaichat: directory listing part missing data for %s\n", part.FileName)
+				continue
+			}
+			formattedText := aiutil.FormatAttachedDirectoryListing(part.FileName, string(part.Data))
+			if formattedText != "" {
+				contentParts = append(contentParts, ChatContentPart{
+					Type: "text",
+					Text: formattedText,
+				})
+			}
+
+		case part.MimeType == "application/pdf":
+			log.Printf("openaichat: PDF attachments are not supported by Chat Completions API, skipping %s\n", part.FileName)
+			continue
+
+		default:
+			continue
+		}
+	}
+
+	if len(contentParts) == 0 {
+		if imageCount > 0 && imageFailCount == imageCount {
+			return nil, fmt.Errorf("all %d image conversions failed", imageCount)
+		}
+		return nil, errors.New("message has no valid content after processing all parts")
+	}
+
+	return &StoredChatMessage{
+		MessageId: aiMsg.MessageId,
+		Message: ChatRequestMessage{
+			Role:         "user",
+			ContentParts: contentParts,
 		},
 	}, nil
 }
@@ -260,8 +366,36 @@ func ConvertAIChatToUIChat(aiChat uctypes.AIChat) (*uctypes.UIChat, error) {
 
 		var parts []uctypes.UIMessagePart
 
-		// Add text content if present
-		if chatMsg.Message.Content != "" {
+		if len(chatMsg.Message.ContentParts) > 0 {
+			for _, cp := range chatMsg.Message.ContentParts {
+				switch cp.Type {
+				case "text":
+					if found, part := aiutil.ConvertDataUserFile(cp.Text); found {
+						if part != nil {
+							parts = append(parts, *part)
+						}
+					} else {
+						parts = append(parts, uctypes.UIMessagePart{
+							Type: "text",
+							Text: cp.Text,
+						})
+					}
+				case "image_url":
+					mimeType := cp.MimeType
+					if mimeType == "" {
+						mimeType = "image/*"
+					}
+					parts = append(parts, uctypes.UIMessagePart{
+						Type: "data-userfile",
+						Data: uctypes.UIMessageDataUserFile{
+							FileName:   cp.FileName,
+							MimeType:   mimeType,
+							PreviewUrl: cp.PreviewUrl,
+						},
+					})
+				}
+			}
+		} else if chatMsg.Message.Content != "" {
 			parts = append(parts, uctypes.UIMessagePart{
 				Type: "text",
 				Text: chatMsg.Message.Content,
@@ -357,4 +491,39 @@ func UpdateToolUseData(chatId string, callId string, newToolUseData uctypes.UIMe
 	}
 
 	return fmt.Errorf("tool call with callId %s not found in chat %s", callId, chatId)
+}
+
+func RemoveToolUseCall(chatId string, callId string) error {
+	chat := chatstore.DefaultChatStore.Get(chatId)
+	if chat == nil {
+		return fmt.Errorf("chat not found: %s", chatId)
+	}
+
+	for _, genMsg := range chat.NativeMessages {
+		chatMsg, ok := genMsg.(*StoredChatMessage)
+		if !ok {
+			continue
+		}
+		idx := chatMsg.Message.FindToolCallIndex(callId)
+		if idx == -1 {
+			continue
+		}
+		updatedMsg := chatMsg.Copy()
+		updatedMsg.Message.ToolCalls = slices.Delete(updatedMsg.Message.ToolCalls, idx, idx+1)
+		if len(updatedMsg.Message.ToolCalls) == 0 {
+			chatstore.DefaultChatStore.RemoveMessage(chatId, chatMsg.MessageId)
+		} else {
+			aiOpts := &uctypes.AIOptsType{
+				APIType:    chat.APIType,
+				Model:      chat.Model,
+				APIVersion: chat.APIVersion,
+			}
+			if err := chatstore.DefaultChatStore.PostMessage(chatId, aiOpts, updatedMsg); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	return nil
 }

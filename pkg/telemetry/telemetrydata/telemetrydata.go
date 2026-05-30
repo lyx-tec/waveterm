@@ -27,6 +27,9 @@ var ValidEventNames = map[string]bool{
 	"action:createblock": true,
 	"action:openwaveai":  true,
 	"action:other":       true,
+	"action:term":        true,
+	"action:termdurable": true,
+	"action:link":        true,
 
 	"wsh:run": true,
 
@@ -34,6 +37,7 @@ var ValidEventNames = map[string]bool{
 
 	"conn:connect":      true,
 	"conn:connecterror": true,
+	"conn:nowsh":        true,
 
 	"waveai:enabletelemetry": true,
 	"waveai:post":            true,
@@ -45,6 +49,10 @@ var ValidEventNames = map[string]bool{
 	"onboarding:skip":       true,
 	"onboarding:fire":       true,
 	"onboarding:githubstar": true,
+
+	"job:start":     true,
+	"job:reconnect": true,
+	"job:done":      true,
 }
 
 type TEvent struct {
@@ -68,6 +76,8 @@ type TEventUserProps struct {
 	ClientBuildTime      string `json:"client:buildtime,omitempty"`
 	ClientOSRelease      string `json:"client:osrelease,omitempty"`
 	ClientIsDev          bool   `json:"client:isdev,omitempty"`
+	ClientPackageType    string `json:"client:packagetype,omitempty"`
+	ClientMacOSVersion   string `json:"client:macos,omitempty"`
 
 	CohortMonth   string `json:"cohort:month,omitempty"`
 	CohortISOWeek string `json:"cohort:isoweek,omitempty"`
@@ -98,23 +108,39 @@ type TEventProps struct {
 	WaveAIActiveMinutes int `json:"activity:waveaiactiveminutes,omitempty"`
 	WaveAIFgMinutes     int `json:"activity:waveaifgminutes,omitempty"`
 	TermCommandsRun     int `json:"activity:termcommandsrun,omitempty"`
+	TermCommandsRemote  int `json:"activity:termcommands:remote,omitempty"`
+	TermCommandsDurable int `json:"activity:termcommands:durable,omitempty"`
+	TermCommandsWsl     int `json:"activity:termcommands:wsl,omitempty"`
 
 	AppFirstDay    bool `json:"app:firstday,omitempty"`
 	AppFirstLaunch bool `json:"app:firstlaunch,omitempty"`
 
 	ActionInitiator string `json:"action:initiator,omitempty" tstype:"\"keyboard\" | \"mouse\""`
 	ActionType      string `json:"action:type,omitempty"`
-	PanicType       string `json:"debug:panictype,omitempty"`
-	BlockView       string `json:"block:view,omitempty"`
-	AiBackendType   string `json:"ai:backendtype,omitempty"`
-	AiLocal         bool   `json:"ai:local,omitempty"`
-	WshCmd          string `json:"wsh:cmd,omitempty"`
-	WshHadError     bool   `json:"wsh:haderror,omitempty"`
-	ConnType        string `json:"conn:conntype,omitempty"`
 
-	OnboardingFeature    string `json:"onboarding:feature,omitempty" tstype:"\"waveai\" | \"magnify\" | \"wsh\""`
+	PanicType string `json:"debug:panictype,omitempty"`
+
+	BlockView       string `json:"block:view,omitempty"`
+	BlockController string `json:"block:controller,omitempty"`
+	BlockSubBlock   bool   `json:"block:subblock,omitempty"`
+
+	AiBackendType string `json:"ai:backendtype,omitempty"`
+	AiLocal       bool   `json:"ai:local,omitempty"`
+
+	WshCmd        string `json:"wsh:cmd,omitempty"`
+	WshErrorCount int    `json:"wsh:errorcount,omitempty"`
+	WshCount      int    `json:"wsh:count,omitempty"`
+
+	ConnType         string `json:"conn:conntype,omitempty"`
+	ConnWshErrorCode string `json:"conn:wsherrorcode,omitempty"`
+	ConnErrorCode    string `json:"conn:errorcode,omitempty"`
+	ConnSubErrorCode string `json:"conn:suberrorcode,omitempty"`
+	ConnContextError bool   `json:"conn:contexterror,omitempty"`
+
+	OnboardingFeature    string `json:"onboarding:feature,omitempty" tstype:"\"waveai\" | \"durable\" | \"magnify\" | \"wsh\""`
 	OnboardingVersion    string `json:"onboarding:version,omitempty"`
 	OnboardingGithubStar string `json:"onboarding:githubstar,omitempty" tstype:"\"already\" | \"star\" | \"later\""`
+	OnboardingPage       string `json:"onboarding:page,omitempty"`
 
 	DisplayHeight int         `json:"display:height,omitempty"`
 	DisplayWidth  int         `json:"display:width,omitempty"`
@@ -122,13 +148,15 @@ type TEventProps struct {
 	DisplayCount  int         `json:"display:count,omitempty"`
 	DisplayAll    interface{} `json:"display:all,omitempty"`
 
-	CountBlocks     int            `json:"count:blocks,omitempty"`
-	CountTabs       int            `json:"count:tabs,omitempty"`
-	CountWindows    int            `json:"count:windows,omitempty"`
-	CountWorkspaces int            `json:"count:workspaces,omitempty"`
-	CountSSHConn    int            `json:"count:sshconn,omitempty"`
-	CountWSLConn    int            `json:"count:wslconn,omitempty"`
-	CountViews      map[string]int `json:"count:views,omitempty"`
+	CountBlocks        int            `json:"count:blocks,omitempty"`
+	CountTabs          int            `json:"count:tabs,omitempty"`
+	CountWindows       int            `json:"count:windows,omitempty"`
+	CountWorkspaces    int            `json:"count:workspaces,omitempty"`
+	CountSSHConn       int            `json:"count:sshconn,omitempty"`
+	CountWSLConn       int            `json:"count:wslconn,omitempty"`
+	CountJobs          int            `json:"count:jobs,omitempty"`
+	CountJobsConnected int            `json:"count:jobsconnected,omitempty"`
+	CountViews         map[string]int `json:"count:views,omitempty"`
 
 	WaveAIAPIType              string         `json:"waveai:apitype,omitempty"`
 	WaveAIModel                string         `json:"waveai:model,omitempty"`
@@ -157,6 +185,9 @@ type TEventProps struct {
 	WaveAIIsLocal              bool           `json:"waveai:islocal,omitempty"`
 	WaveAIFeedback             string         `json:"waveai:feedback,omitempty" tstype:"\"good\" | \"bad\""`
 	WaveAIAction               string         `json:"waveai:action,omitempty"`
+
+	JobDoneReason string `json:"job:donereason,omitempty"`
+	JobKind       string `json:"job:kind,omitempty"`
 
 	UserSet     *TEventUserProps `json:"$set,omitempty"`
 	UserSetOnce *TEventUserProps `json:"$set_once,omitempty"`

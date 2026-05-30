@@ -26,7 +26,9 @@ const (
 const (
 	AIProvider_Wave        = "wave"
 	AIProvider_Google      = "google"
+	AIProvider_Groq        = "groq"
 	AIProvider_OpenRouter  = "openrouter"
+	AIProvider_NanoGPT     = "nanogpt"
 	AIProvider_OpenAI      = "openai"
 	AIProvider_Azure       = "azure"
 	AIProvider_AzureLegacy = "azure-legacy"
@@ -154,12 +156,18 @@ const (
 	ThinkingLevelLow    = "low"
 	ThinkingLevelMedium = "medium"
 	ThinkingLevelHigh   = "high"
+
+	VerbosityLevelLow    = "low"
+	VerbosityLevelMedium = "medium"
+	VerbosityLevelHigh   = "high"
 )
 
 const (
-	AIModeQuick    = "waveai@quick"
-	AIModeBalanced = "waveai@balanced"
-	AIModeDeep     = "waveai@deep"
+	AIModeQuick          = "waveai@quick"
+	AIModeBalanced       = "waveai@balanced"
+	AIModeDeep           = "waveai@deep"
+	AIModeBuilderDefault = "waveaibuilder@default"
+	AIModeBuilderDeep    = "waveaibuilder@deep"
 )
 
 const (
@@ -180,30 +188,8 @@ const (
 	ApprovalUserDenied    = "user-denied"
 	ApprovalTimeout       = "timeout"
 	ApprovalAutoApproved  = "auto-approved"
+	ApprovalCanceled      = "canceled"
 )
-
-type AIModeConfig struct {
-	Mode               string   `json:"mode"`
-	DisplayName        string   `json:"display:name"`
-	DisplayOrder       float64  `json:"display:order,omitempty"`
-	DisplayIcon        string   `json:"display:icon"`
-	Provider           string   `json:"provider,omitempty"`
-	APIType            string   `json:"apitype"`
-	Model              string   `json:"model"`
-	ThinkingLevel      string   `json:"thinkinglevel"`
-	BaseURL            string   `json:"baseurl,omitempty"`
-	WaveAICloud        bool     `json:"waveaicloud,omitempty"`
-	APIVersion         string   `json:"apiversion,omitempty"`
-	APIToken           string   `json:"apitoken,omitempty"`
-	APITokenSecretName string   `json:"apitokensecretname,omitempty"`
-	Premium            bool     `json:"premium"`
-	Description        string   `json:"description"`
-	Capabilities       []string `json:"capabilities,omitempty"`
-}
-
-func (c *AIModeConfig) HasCapability(cap string) bool {
-	return slices.Contains(c.Capabilities, cap)
-}
 
 // when updating this struct, also modify frontend/app/aipanel/aitypes.ts WaveUIDataTypes.tooluse
 type UIMessageDataToolUse struct {
@@ -277,6 +263,7 @@ type AIOptsType struct {
 	MaxTokens     int      `json:"maxtokens,omitempty"`
 	TimeoutMs     int      `json:"timeoutms,omitempty"`
 	ThinkingLevel string   `json:"thinkinglevel,omitempty"` // ThinkingLevelLow, ThinkingLevelMedium, or ThinkingLevelHigh
+	Verbosity     string   `json:"verbosity,omitempty"`     // Text verbosity level (OpenAI Responses API only, ignored by other backends)
 	AIMode        string   `json:"aimode,omitempty"`
 	Capabilities  []string `json:"capabilities,omitempty"`
 	WaveAIPremium bool     `json:"waveaipremium,omitempty"`
@@ -520,7 +507,6 @@ type WaveChatOpts struct {
 	TabStateGenerator    func() (string, []ToolDefinition, string, error)
 	BuilderAppGenerator  func() (string, string, string, error)
 	WidgetAccess         bool
-	RegisterToolApproval func(string)
 	AllowNativeWebSearch bool
 	BuilderId            string
 	BuilderAppId         string
@@ -630,6 +616,7 @@ func AreModelsCompatible(apiType, model1, model2 string) bool {
 
 	if apiType == APIType_OpenAIResponses {
 		gpt5Models := map[string]bool{
+			"gpt-5.2":    true,
 			"gpt-5.1":    true,
 			"gpt-5":      true,
 			"gpt-5-mini": true,

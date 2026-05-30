@@ -1,9 +1,8 @@
-// Copyright 2025, Command Line Inc.
+// Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { BlockNodeModel } from "@/app/block/blocktypes";
-import { atoms, getApi, globalStore, WOS } from "@/app/store/global";
-import { waveEventSubscribe } from "@/app/store/wps";
+import { getApi, globalStore, WOS } from "@/app/store/global";
+import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { WebView, WebViewModel } from "@/app/view/webview/webview";
@@ -17,11 +16,11 @@ class TsunamiViewModel extends WebViewModel {
     appMeta: jotai.PrimitiveAtom<AppMeta>;
     appMetaUnsubFn: () => void;
     isRestarting: jotai.PrimitiveAtom<boolean>;
+    viewIcon: jotai.Atom<IconButtonDecl>;
     viewName: jotai.Atom<string>;
-    viewIconColor: jotai.Atom<string>;
 
-    constructor(blockId: string, nodeModel: BlockNodeModel) {
-        super(blockId, nodeModel);
+    constructor(initOpts: ViewModelInitType) {
+        super(initOpts);
         this.viewType = "tsunami";
         this.isRestarting = jotai.atom(false);
 
@@ -29,49 +28,49 @@ class TsunamiViewModel extends WebViewModel {
         this.hideNav = jotai.atom(true);
 
         // Set custom partition for tsunami WebView isolation
-        this.partitionOverride = jotai.atom(`tsunami:${blockId}`);
+        this.partitionOverride = jotai.atom(`tsunami:${this.blockId}`);
 
         this.shellProcFullStatus = jotai.atom(null) as jotai.PrimitiveAtom<BlockControllerRuntimeStatus>;
-        const initialShellProcStatus = services.BlockService.GetControllerStatus(blockId);
+        const initialShellProcStatus = services.BlockService.GetControllerStatus(this.blockId);
         initialShellProcStatus.then((rts) => {
             this.updateShellProcStatus(rts);
         });
-        this.shellProcStatusUnsubFn = waveEventSubscribe({
+        this.shellProcStatusUnsubFn = waveEventSubscribeSingle({
             eventType: "controllerstatus",
-            scope: WOS.makeORef("block", blockId),
+            scope: WOS.makeORef("block", this.blockId),
             handler: (event) => {
-                let bcRTS: BlockControllerRuntimeStatus = event.data;
-                this.updateShellProcStatus(bcRTS);
+                this.updateShellProcStatus(event.data);
             },
         });
 
         this.appMeta = jotai.atom(null) as jotai.PrimitiveAtom<AppMeta>;
         this.viewIcon = jotai.atom((get) => {
             const meta = get(this.appMeta);
-            return meta?.icon || "cube";
-        });
-        this.viewIconColor = jotai.atom((get) => {
-            const meta = get(this.appMeta);
-            return meta?.iconcolor;
+            const icon = meta?.icon || "cube";
+            const iconColor = meta?.iconcolor;
+            return {
+                elemtype: "iconbutton" as const,
+                icon: icon,
+                iconColor: iconColor,
+            };
         });
         this.viewName = jotai.atom((get) => {
             const meta = get(this.appMeta);
             return meta?.title || "WaveApp";
         });
         const initialRTInfo = RpcApi.GetRTInfoCommand(TabRpcClient, {
-            oref: WOS.makeORef("block", blockId),
+            oref: WOS.makeORef("block", this.blockId),
         });
         initialRTInfo.then((rtInfo) => {
             if (rtInfo && rtInfo["tsunami:appmeta"]) {
                 globalStore.set(this.appMeta, rtInfo["tsunami:appmeta"]);
             }
         });
-        this.appMetaUnsubFn = waveEventSubscribe({
+        this.appMetaUnsubFn = waveEventSubscribeSingle({
             eventType: "tsunami:updatemeta",
-            scope: WOS.makeORef("block", blockId),
+            scope: WOS.makeORef("block", this.blockId),
             handler: (event) => {
-                const meta: AppMeta = event.data;
-                globalStore.set(this.appMeta, meta);
+                globalStore.set(this.appMeta, event.data);
             },
         });
     }
@@ -106,7 +105,7 @@ class TsunamiViewModel extends WebViewModel {
             this.triggerRestartAtom();
         }
         const prtn = RpcApi.ControllerResyncCommand(TabRpcClient, {
-            tabid: globalStore.get(atoms.staticTabId),
+            tabid: this.tabModel.tabId,
             blockid: this.blockId,
             forcerestart: forceRestart,
         });
@@ -117,9 +116,9 @@ class TsunamiViewModel extends WebViewModel {
         this.doControllerResync(false, "resync", false);
     }
 
-    stopController() {
-        const prtn = RpcApi.ControllerStopCommand(TabRpcClient, this.blockId);
-        prtn.catch((e) => console.log("error stopping controller", e));
+    destroyController() {
+        const prtn = RpcApi.ControllerDestroyCommand(TabRpcClient, this.blockId);
+        prtn.catch((e) => console.log("error destroying controller", e));
     }
 
     async restartController() {
@@ -129,12 +128,12 @@ class TsunamiViewModel extends WebViewModel {
         this.triggerRestartAtom();
         try {
             // Stop the controller first
-            await RpcApi.ControllerStopCommand(TabRpcClient, this.blockId);
+            await RpcApi.ControllerDestroyCommand(TabRpcClient, this.blockId);
             // Wait a bit for the controller to fully stop
             await new Promise((resolve) => setTimeout(resolve, 300));
             // Then resync to restart it
             await RpcApi.ControllerResyncCommand(TabRpcClient, {
-                tabid: globalStore.get(atoms.staticTabId),
+                tabid: this.tabModel.tabId,
                 blockid: this.blockId,
                 forcerestart: false,
             });
@@ -201,7 +200,7 @@ class TsunamiViewModel extends WebViewModel {
         const tsunamiItems: ContextMenuItem[] = [
             {
                 label: "Stop WaveApp",
-                click: () => this.stopController(),
+                click: () => this.destroyController(),
             },
             {
                 label: "Restart WaveApp",

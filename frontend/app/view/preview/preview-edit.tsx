@@ -1,14 +1,14 @@
 // Copyright 2025, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import { globalStore } from "@/app/store/jotaiStore";
 import { tryReinjectKey } from "@/app/store/keymodel";
 import { CodeEditor } from "@/app/view/codeeditor/codeeditor";
-import { globalStore } from "@/store/global";
 import { adaptFromReactOrNativeKeyEvent, checkKeyPressed } from "@/util/keyutil";
 import { fireAndForget } from "@/util/util";
-import { Monaco } from "@monaco-editor/react";
 import { useAtomValue, useSetAtom } from "jotai";
-import type * as MonacoTypes from "monaco-editor/esm/vs/editor/editor.api";
+import type * as MonacoTypes from "monaco-editor";
+import * as monaco from "monaco-editor";
 import { useEffect } from "react";
 import type { SpecializedViewProps } from "./preview";
 
@@ -63,16 +63,20 @@ function CodeEditPreview({ model }: SpecializedViewProps) {
 
     useEffect(() => {
         model.codeEditKeyDownHandler = codeEditKeyDownHandler;
+        model.refreshCallback = () => {
+            globalStore.set(model.refreshVersion, (v) => v + 1);
+        };
         return () => {
             model.codeEditKeyDownHandler = null;
             model.monacoRef.current = null;
+            model.refreshCallback = null;
         };
     }, []);
 
-    function onMount(editor: MonacoTypes.editor.IStandaloneCodeEditor, monaco: Monaco): () => void {
+    function onMount(editor: MonacoTypes.editor.IStandaloneCodeEditor, monacoApi: typeof monaco): () => void {
         model.monacoRef.current = editor;
 
-        editor.onKeyDown((e: MonacoTypes.IKeyboardEvent) => {
+        const keyDownDisposer = editor.onKeyDown((e: MonacoTypes.IKeyboardEvent) => {
             const waveEvent = adaptFromReactOrNativeKeyEvent(e.browserEvent);
             const handled = tryReinjectKey(waveEvent);
             if (handled) {
@@ -86,7 +90,9 @@ function CodeEditPreview({ model }: SpecializedViewProps) {
             editor.focus();
         }
 
-        return null;
+        return () => {
+            keyDownDisposer.dispose();
+        };
     }
 
     return (

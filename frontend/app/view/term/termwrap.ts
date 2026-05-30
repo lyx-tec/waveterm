@@ -1,14 +1,25 @@
-// Copyright 2025, Command Line Inc.
+// Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+import type { BlockNodeModel } from "@/app/block/blocktypes";
+import { setBadge } from "@/app/store/badge";
 import { getFileSubject } from "@/app/store/wps";
-import { sendWSCommand } from "@/app/store/ws";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { WOS, atoms, fetchWaveFile, getApi, getSettingsKeyAtom, globalStore, openLink } from "@/store/global";
+import {
+    fetchWaveFile,
+    getApi,
+    getOverrideConfigAtom,
+    getSettingsKeyAtom,
+    globalStore,
+    isDev,
+    openLink,
+    WOS,
+} from "@/store/global";
 import * as services from "@/store/services";
 import { PLATFORM, PlatformMacOS } from "@/util/platformutil";
-import { base64ToArray, base64ToString, fireAndForget } from "@/util/util";
+import { base64ToArray, fireAndForget } from "@/util/util";
+import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -18,8 +29,21 @@ import { Terminal } from "@xterm/xterm";
 import debug from "debug";
 import * as jotai from "jotai";
 import { debounce } from "throttle-debounce";
-import { FitAddon } from "./fitaddon";
-import { createTempFileFromBlob, extractAllClipboardData } from "./termutil";
+import {
+    handleOsc16162Command,
+    handleOsc52Command,
+    handleOsc7Command,
+    isClaudeCodeCommand,
+    type ShellIntegrationStatus,
+} from "./osc-handlers";
+import {
+    bufferLinesToText,
+    createTempFileFromBlob,
+    extractAllClipboardData,
+    normalizeCursorStyle,
+    quoteForPosixShell,
+    trimTerminalSelection,
+} from "./termutil";
 
 const dlog = debug("wave:termwrap");
 
@@ -27,309 +51,31 @@ const TermFileName = "term";
 const TermCacheFileName = "cache:term:full";
 const MinDataProcessedForCache = 100 * 1024;
 export const SupportsImageInput = true;
+const MaxRepaintTransactionMs = 2000;
 
 // detect webgl support
 function detectWebGLSupport(): boolean {
     try {
         const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("webgl");
+        const ctx = canvas.getContext("webgl2");
         return !!ctx;
     } catch (e) {
         return false;
     }
 }
 
-const WebGLSupported = detectWebGLSupport();
+export const WebGLSupported = detectWebGLSupport();
 let loggedWebGL = false;
 
 type TermWrapOptions = {
     keydownHandler?: (e: KeyboardEvent) => boolean;
     useWebGl?: boolean;
     sendDataHandler?: (data: string) => void;
+    nodeModel?: BlockNodeModel;
 };
 
-function handleOscWaveCommand(data: string, blockId: string, loaded: boolean): boolean {
-    if (!loaded) {
-        return true;
-    }
-    if (!data || data.length === 0) {
-        console.log("Invalid Wave OSC command received (empty)");
-        return true;
-    }
-
-    // Expected formats:
-    // "setmeta;{JSONDATA}"
-    // "setmeta;[wave-id];{JSONDATA}"
-    const parts = data.split(";");
-    if (parts[0] !== "setmeta") {
-        console.log("Invalid Wave OSC command received (bad command)", data);
-        return true;
-    }
-    let jsonPayload: string;
-    let waveId: string | undefined;
-    if (parts.length === 2) {
-        jsonPayload = parts[1];
-    } else if (parts.length >= 3) {
-        waveId = parts[1];
-        jsonPayload = parts.slice(2).join(";");
-    } else {
-        console.log("Invalid Wave OSC command received (1 part)", data);
-        return true;
-    }
-
-    let meta: any;
-    try {
-        meta = JSON.parse(jsonPayload);
-    } catch (e) {
-        console.error("Invalid JSON in Wave OSC command:", e);
-        return true;
-    }
-
-    if (waveId) {
-        // Resolve the wave id to an ORef using our ResolveIdsCommand.
-        fireAndForget(() => {
-            return RpcApi.ResolveIdsCommand(TabRpcClient, { blockid: blockId, ids: [waveId] })
-                .then((response: { resolvedids: { [key: string]: any } }) => {
-                    const oref = response.resolvedids[waveId];
-                    if (!oref) {
-                        console.error("Failed to resolve wave id:", waveId);
-                        return;
-                    }
-                    services.ObjectService.UpdateObjectMeta(oref, meta);
-                })
-                .catch((err: any) => {
-                    console.error("Error resolving wave id", waveId, err);
-                });
-        });
-    } else {
-        // No wave id provided; update using the current block id.
-        fireAndForget(() => {
-            return services.ObjectService.UpdateObjectMeta(WOS.makeORef("block", blockId), meta);
-        });
-    }
-    return true;
-}
-
-// for xterm handlers, we return true always because we "own" OSC 7.
-// even if it is invalid we dont want to propagate to other handlers
-function handleOsc7Command(data: string, blockId: string, loaded: boolean): boolean {
-    if (!loaded) {
-        return true;
-    }
-    if (data == null || data.length == 0) {
-        console.log("Invalid OSC 7 command received (empty)");
-        return true;
-    }
-    if (data.length > 1024) {
-        console.log("Invalid OSC 7, data length too long", data.length);
-        return true;
-    }
-
-    let pathPart: string;
-    try {
-        const url = new URL(data);
-        if (url.protocol !== "file:") {
-            console.log("Invalid OSC 7 command received (non-file protocol)", data);
-            return true;
-        }
-        pathPart = decodeURIComponent(url.pathname);
-
-        // Normalize double slashes at the beginning to single slash
-        if (pathPart.startsWith("//")) {
-            pathPart = pathPart.substring(1);
-        }
-
-        // Handle Windows paths (e.g., /C:/... or /D:\...)
-        if (/^\/[a-zA-Z]:[\\/]/.test(pathPart)) {
-            // Strip leading slash and normalize to forward slashes
-            pathPart = pathPart.substring(1).replace(/\\/g, "/");
-        }
-
-        // Handle UNC paths (e.g., /\\server\share)
-        if (pathPart.startsWith("/\\\\")) {
-            // Strip leading slash but keep backslashes for UNC
-            pathPart = pathPart.substring(1);
-        }
-    } catch (e) {
-        console.log("Invalid OSC 7 command received (parse error)", data, e);
-        return true;
-    }
-
-    setTimeout(() => {
-        fireAndForget(async () => {
-            await services.ObjectService.UpdateObjectMeta(WOS.makeORef("block", blockId), {
-                "cmd:cwd": pathPart,
-            });
-
-            const rtInfo = { "shell:hascurcwd": true };
-            const rtInfoData: CommandSetRTInfoData = {
-                oref: WOS.makeORef("block", blockId),
-                data: rtInfo,
-            };
-            await RpcApi.SetRTInfoCommand(TabRpcClient, rtInfoData).catch((e) =>
-                console.log("error setting RT info", e)
-            );
-        });
-    }, 0);
-    return true;
-}
-
-// some POC concept code for adding a decoration to a marker
-function addTestMarkerDecoration(terminal: Terminal, marker: TermTypes.IMarker, termWrap: TermWrap): void {
-    const decoration = terminal.registerDecoration({
-        marker: marker,
-        layer: "top",
-    });
-    if (!decoration) {
-        return;
-    }
-    decoration.onRender((el) => {
-        el.classList.add("wave-decoration");
-        el.classList.add("bg-ansi-white");
-        el.dataset.markerline = String(marker.line);
-        if (!el.querySelector(".wave-deco-line")) {
-            const line = document.createElement("div");
-            line.classList.add("wave-deco-line", "bg-accent/20");
-            line.style.position = "absolute";
-            line.style.top = "0";
-            line.style.left = "0";
-            line.style.width = "500px";
-            line.style.height = "1px";
-            el.appendChild(line);
-        }
-    });
-}
-
-// OSC 16162 - Shell Integration Commands
-// See aiprompts/wave-osc-16162.md for full documentation
-type ShellIntegrationStatus = "ready" | "running-command";
-
-type Osc16162Command =
-    | { command: "A"; data: {} }
-    | { command: "C"; data: { cmd64?: string } }
-    | { command: "M"; data: { shell?: string; shellversion?: string; uname?: string; integration?: boolean } }
-    | { command: "D"; data: { exitcode?: number } }
-    | { command: "I"; data: { inputempty?: boolean } }
-    | { command: "R"; data: {} };
-
-function handleOsc16162Command(data: string, blockId: string, loaded: boolean, termWrap: TermWrap): boolean {
-    const terminal = termWrap.terminal;
-    if (!loaded) {
-        return true;
-    }
-    if (!data || data.length === 0) {
-        return true;
-    }
-
-    const parts = data.split(";");
-    const commandStr = parts[0];
-    const jsonDataStr = parts.length > 1 ? parts.slice(1).join(";") : null;
-    let parsedData: Record<string, any> = {};
-    if (jsonDataStr) {
-        try {
-            parsedData = JSON.parse(jsonDataStr);
-        } catch (e) {
-            console.error("Error parsing OSC 16162 JSON data:", e);
-        }
-    }
-
-    const cmd: Osc16162Command = { command: commandStr, data: parsedData } as Osc16162Command;
-    const rtInfo: ObjRTInfo = {};
-    switch (cmd.command) {
-        case "A":
-            rtInfo["shell:state"] = "ready";
-            globalStore.set(termWrap.shellIntegrationStatusAtom, "ready");
-            const marker = terminal.registerMarker(0);
-            if (marker) {
-                termWrap.promptMarkers.push(marker);
-                // addTestMarkerDecoration(terminal, marker, termWrap);
-                marker.onDispose(() => {
-                    const idx = termWrap.promptMarkers.indexOf(marker);
-                    if (idx !== -1) {
-                        termWrap.promptMarkers.splice(idx, 1);
-                    }
-                });
-            }
-            break;
-        case "C":
-            rtInfo["shell:state"] = "running-command";
-            globalStore.set(termWrap.shellIntegrationStatusAtom, "running-command");
-            getApi().incrementTermCommands();
-            if (cmd.data.cmd64) {
-                const decodedLen = Math.ceil(cmd.data.cmd64.length * 0.75);
-                if (decodedLen > 8192) {
-                    rtInfo["shell:lastcmd"] = `# command too large (${decodedLen} bytes)`;
-                    globalStore.set(termWrap.lastCommandAtom, rtInfo["shell:lastcmd"]);
-                } else {
-                    try {
-                        const decodedCmd = base64ToString(cmd.data.cmd64);
-                        rtInfo["shell:lastcmd"] = decodedCmd;
-                        globalStore.set(termWrap.lastCommandAtom, decodedCmd);
-                    } catch (e) {
-                        console.error("Error decoding cmd64:", e);
-                        rtInfo["shell:lastcmd"] = null;
-                        globalStore.set(termWrap.lastCommandAtom, null);
-                    }
-                }
-            } else {
-                rtInfo["shell:lastcmd"] = null;
-                globalStore.set(termWrap.lastCommandAtom, null);
-            }
-            // also clear lastcmdexitcode (since we've now started a new command)
-            rtInfo["shell:lastcmdexitcode"] = null;
-            break;
-        case "M":
-            if (cmd.data.shell) {
-                rtInfo["shell:type"] = cmd.data.shell;
-            }
-            if (cmd.data.shellversion) {
-                rtInfo["shell:version"] = cmd.data.shellversion;
-            }
-            if (cmd.data.uname) {
-                rtInfo["shell:uname"] = cmd.data.uname;
-            }
-            if (cmd.data.integration != null) {
-                rtInfo["shell:integration"] = cmd.data.integration;
-            }
-            break;
-        case "D":
-            if (cmd.data.exitcode != null) {
-                rtInfo["shell:lastcmdexitcode"] = cmd.data.exitcode;
-            } else {
-                rtInfo["shell:lastcmdexitcode"] = null;
-            }
-            break;
-        case "I":
-            if (cmd.data.inputempty != null) {
-                rtInfo["shell:inputempty"] = cmd.data.inputempty;
-            }
-            break;
-        case "R":
-            globalStore.set(termWrap.shellIntegrationStatusAtom, null);
-            if (terminal.buffer.active.type === "alternate") {
-                terminal.write("\x1b[?1049l");
-            }
-            break;
-    }
-
-    if (Object.keys(rtInfo).length > 0) {
-        setTimeout(() => {
-            fireAndForget(async () => {
-                const rtInfoData: CommandSetRTInfoData = {
-                    oref: WOS.makeORef("block", blockId),
-                    data: rtInfo,
-                };
-                await RpcApi.SetRTInfoCommand(TabRpcClient, rtInfoData).catch((e) =>
-                    console.log("error setting RT info (OSC 16162)", e)
-                );
-            });
-        }, 0);
-    }
-
-    return true;
-}
-
 export class TermWrap {
+    tabId: string;
     blockId: string;
     ptyOffset: number;
     dataBytesProcessed: number;
@@ -346,97 +92,228 @@ export class TermWrap {
     multiInputCallback: (data: string) => void;
     sendDataHandler: (data: string) => void;
     onSearchResultsDidChange?: (result: { resultIndex: number; resultCount: number }) => void;
-    private toDispose: TermTypes.IDisposable[] = [];
+    toDispose: TermTypes.IDisposable[] = [];
+    webglAddon: WebglAddon | null = null;
+    webglContextLossDisposable: TermTypes.IDisposable | null = null;
+    webglEnabledAtom: jotai.PrimitiveAtom<boolean>;
     pasteActive: boolean = false;
     lastUpdated: number;
     promptMarkers: TermTypes.IMarker[] = [];
-    shellIntegrationStatusAtom: jotai.PrimitiveAtom<"ready" | "running-command" | null>;
+    shellIntegrationStatusAtom: jotai.PrimitiveAtom<ShellIntegrationStatus | null>;
     lastCommandAtom: jotai.PrimitiveAtom<string | null>;
-
-    // IME composition state tracking
-    // Prevents duplicate input when switching input methods during composition (e.g., using Capslock)
-    // xterm.js sends data during compositionupdate AND after compositionend, causing duplicates
-    isComposing: boolean = false;
-    composingData: string = "";
-    lastCompositionEnd: number = 0;
-    lastComposedText: string = "";
-    firstDataAfterCompositionSent: boolean = false;
+    claudeCodeActiveAtom: jotai.PrimitiveAtom<boolean>;
+    nodeModel: BlockNodeModel; // this can be null
+    hoveredLinkUri: string | null = null;
+    onLinkHover?: (uri: string | null, mouseX: number, mouseY: number) => void;
 
     // Paste deduplication
     // xterm.js paste() method triggers onData event, which can cause duplicate sends
     lastPasteData: string = "";
     lastPasteTime: number = 0;
 
+    // dev only (for debugging)
+    recentWrites: { idx: number; data: string; ts: number }[] = [];
+    recentWritesCounter: number = 0;
+
+    // for repaint transaction scrolling behavior
+    lastClearScrollbackTs: number = 0;
+    lastMode2026SetTs: number = 0;
+    lastMode2026ResetTs: number = 0;
+    inSyncTransaction: boolean = false;
+    inRepaintTransaction: boolean = false;
+
     constructor(
+        tabId: string,
         blockId: string,
         connectElem: HTMLDivElement,
         options: TermTypes.ITerminalOptions & TermTypes.ITerminalInitOnlyOptions,
         waveOptions: TermWrapOptions
     ) {
         this.loaded = false;
+        this.tabId = tabId;
         this.blockId = blockId;
         this.sendDataHandler = waveOptions.sendDataHandler;
+        this.nodeModel = waveOptions.nodeModel;
         this.ptyOffset = 0;
         this.dataBytesProcessed = 0;
         this.hasResized = false;
         this.lastUpdated = Date.now();
         this.promptMarkers = [];
-        this.shellIntegrationStatusAtom = jotai.atom(null) as jotai.PrimitiveAtom<"ready" | "running-command" | null>;
+        this.shellIntegrationStatusAtom = jotai.atom(null) as jotai.PrimitiveAtom<ShellIntegrationStatus | null>;
         this.lastCommandAtom = jotai.atom(null) as jotai.PrimitiveAtom<string | null>;
+        this.claudeCodeActiveAtom = jotai.atom(false);
+        this.webglEnabledAtom = jotai.atom(false) as jotai.PrimitiveAtom<boolean>;
         this.terminal = new Terminal(options);
         this.fitAddon = new FitAddon();
-        this.fitAddon.noScrollbar = PLATFORM === PlatformMacOS;
         this.serializeAddon = new SerializeAddon();
         this.searchAddon = new SearchAddon();
         this.terminal.loadAddon(this.searchAddon);
         this.terminal.loadAddon(this.fitAddon);
         this.terminal.loadAddon(this.serializeAddon);
         this.terminal.loadAddon(
-            new WebLinksAddon((e, uri) => {
-                e.preventDefault();
-                switch (PLATFORM) {
-                    case PlatformMacOS:
-                        if (e.metaKey) {
-                            fireAndForget(() => openLink(uri));
-                        }
-                        break;
-                    default:
-                        if (e.ctrlKey) {
-                            fireAndForget(() => openLink(uri));
-                        }
-                        break;
+            new WebLinksAddon(
+                (e, uri) => {
+                    e.preventDefault();
+                    switch (PLATFORM) {
+                        case PlatformMacOS:
+                            if (e.metaKey) {
+                                fireAndForget(() => openLink(uri));
+                            }
+                            break;
+                        default:
+                            if (e.ctrlKey) {
+                                fireAndForget(() => openLink(uri));
+                            }
+                            break;
+                    }
+                },
+                {
+                    hover: (e, uri) => {
+                        this.hoveredLinkUri = uri;
+                        this.onLinkHover?.(uri, e.clientX, e.clientY);
+                    },
+                    leave: () => {
+                        this.hoveredLinkUri = null;
+                        this.onLinkHover?.(null, 0, 0);
+                    },
                 }
-            })
+            )
         );
-        if (WebGLSupported && waveOptions.useWebGl) {
-            const webglAddon = new WebglAddon();
-            this.toDispose.push(
-                webglAddon.onContextLoss(() => {
-                    webglAddon.dispose();
-                })
-            );
-            this.terminal.loadAddon(webglAddon);
-            if (!loggedWebGL) {
-                console.log("loaded webgl!");
-                loggedWebGL = true;
-            }
-        }
-        // Register OSC 9283 handler
-        this.terminal.parser.registerOscHandler(9283, (data: string) => {
-            return handleOscWaveCommand(data, this.blockId, this.loaded);
-        });
+        this.setTermRenderer(WebGLSupported && waveOptions.useWebGl ? "webgl" : "dom");
+        // Register OSC handlers
         this.terminal.parser.registerOscHandler(7, (data: string) => {
-            return handleOsc7Command(data, this.blockId, this.loaded);
+            try {
+                return handleOsc7Command(data, this.blockId, this.loaded);
+            } catch (e) {
+                console.error("[termwrap] osc 7 handler error", this.blockId, e);
+                return false;
+            }
+        });
+        this.terminal.parser.registerOscHandler(52, (data: string) => {
+            try {
+                return handleOsc52Command(data, this.blockId, this.loaded, this);
+            } catch (e) {
+                console.error("[termwrap] osc 52 handler error", this.blockId, e);
+                return false;
+            }
         });
         this.terminal.parser.registerOscHandler(16162, (data: string) => {
-            return handleOsc16162Command(data, this.blockId, this.loaded, this);
+            try {
+                return handleOsc16162Command(data, this.blockId, this.loaded, this);
+            } catch (e) {
+                console.error("[termwrap] osc 16162 handler error", this.blockId, e);
+                return false;
+            }
         });
-        this.terminal.attachCustomKeyEventHandler(waveOptions.keydownHandler);
+        this.toDispose.push(
+            this.terminal.parser.registerCsiHandler({ final: "J" }, (params) => {
+                if (params == null || params.length < 1) {
+                    return false;
+                }
+                if (params[0] === 3) {
+                    this.lastClearScrollbackTs = Date.now();
+                    if (this.inSyncTransaction) {
+                        console.log("[termwrap] repaint transaction starting");
+                        this.inRepaintTransaction = true;
+                    }
+                }
+                return false;
+            })
+        );
+        this.toDispose.push(
+            this.terminal.parser.registerCsiHandler({ prefix: "?", final: "h" }, (params) => {
+                if (params == null || params.length < 1) {
+                    return false;
+                }
+                if (params[0] === 2026) {
+                    this.lastMode2026SetTs = Date.now();
+                    this.inSyncTransaction = true;
+                }
+                return false;
+            })
+        );
+        this.toDispose.push(
+            this.terminal.parser.registerCsiHandler({ prefix: "?", final: "l" }, (params) => {
+                if (params == null || params.length < 1) {
+                    return false;
+                }
+                if (params[0] === 2026) {
+                    this.lastMode2026ResetTs = Date.now();
+                    this.inSyncTransaction = false;
+                    const wasRepaint = this.inRepaintTransaction;
+                    this.inRepaintTransaction = false;
+                    if (wasRepaint && Date.now() - this.lastClearScrollbackTs <= MaxRepaintTransactionMs) {
+                        setTimeout(() => {
+                            console.log("[termwrap] repaint transaction complete, scrolling to bottom");
+                            this.terminal.scrollToBottom();
+                        }, 20);
+                    }
+                }
+                return false;
+            })
+        );
+        this.toDispose.push(
+            this.terminal.onBell(() => {
+                if (!this.loaded) {
+                    return true;
+                }
+                console.log("BEL received in terminal", this.blockId);
+                const bellSoundEnabled =
+                    globalStore.get(getOverrideConfigAtom(this.blockId, "term:bellsound")) ?? false;
+                if (bellSoundEnabled) {
+                    fireAndForget(() => RpcApi.ElectronSystemBellCommand(TabRpcClient, { route: "electron" }));
+                }
+                const bellIndicatorEnabled =
+                    globalStore.get(getOverrideConfigAtom(this.blockId, "term:bellindicator")) ?? false;
+                if (bellIndicatorEnabled) {
+                    setBadge(this.blockId, { icon: "bell", color: "#fbbf24", priority: 1 });
+                }
+                return true;
+            })
+        );
+        this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+            if (!waveOptions.keydownHandler) {
+                return true;
+            }
+            return waveOptions.keydownHandler(e);
+        });
         this.connectElem = connectElem;
         this.mainFileSubject = null;
         this.heldData = [];
         this.handleResize_debounced = debounce(50, this.handleResize.bind(this));
         this.terminal.open(this.connectElem);
+
+        const dragoverHandler = (e: DragEvent) => {
+            e.preventDefault();
+            if (e.dataTransfer) {
+                e.dataTransfer.dropEffect = "copy";
+            }
+        };
+        const dropHandler = (e: DragEvent) => {
+            e.preventDefault();
+            if (!e.dataTransfer || e.dataTransfer.files.length === 0) {
+                return;
+            }
+            const paths: string[] = [];
+            for (let i = 0; i < e.dataTransfer.files.length; i++) {
+                const file = e.dataTransfer.files[i];
+                const filePath = getApi().getPathForFile(file);
+                if (filePath) {
+                    paths.push(quoteForPosixShell(filePath));
+                }
+            }
+            if (paths.length > 0) {
+                this.terminal.paste(paths.join(" ") + " ");
+            }
+        };
+        this.connectElem.addEventListener("dragover", dragoverHandler);
+        this.connectElem.addEventListener("drop", dropHandler);
+        this.toDispose.push({
+            dispose: () => {
+                this.connectElem.removeEventListener("dragover", dragoverHandler);
+                this.connectElem.removeEventListener("drop", dropHandler);
+            },
+        });
         this.handleResize();
         const pasteHandler = this.pasteHandler.bind(this);
         this.connectElem.addEventListener("paste", pasteHandler, true);
@@ -447,42 +324,81 @@ export class TermWrap {
         });
     }
 
-    resetCompositionState() {
-        this.isComposing = false;
-        this.composingData = "";
+    getZoneId(): string {
+        return this.blockId;
     }
 
-    private handleCompositionStart = (e: CompositionEvent) => {
-        dlog("compositionstart", e.data);
-        this.isComposing = true;
-        this.composingData = "";
-    };
+    setCursorStyle(cursorStyle: string) {
+        this.terminal.options.cursorStyle = normalizeCursorStyle(cursorStyle);
+    }
 
-    private handleCompositionUpdate = (e: CompositionEvent) => {
-        dlog("compositionupdate", e.data);
-        this.composingData = e.data || "";
-    };
+    setCursorBlink(cursorBlink: boolean) {
+        this.terminal.options.cursorBlink = cursorBlink ?? false;
+    }
 
-    private handleCompositionEnd = (e: CompositionEvent) => {
-        dlog("compositionend", e.data);
-        this.isComposing = false;
-        this.lastComposedText = e.data || "";
-        this.lastCompositionEnd = Date.now();
-        this.firstDataAfterCompositionSent = false;
-    };
+    setTermRenderer(renderer: "webgl" | "dom") {
+        if (renderer === "webgl") {
+            if (this.webglAddon != null) {
+                return;
+            }
+            if (!WebGLSupported) {
+                renderer = "dom";
+            }
+        } else {
+            if (this.webglAddon == null) {
+                return;
+            }
+        }
+        if (this.webglAddon != null) {
+            this.webglContextLossDisposable?.dispose();
+            this.webglContextLossDisposable = null;
+            this.webglAddon.dispose();
+            this.webglAddon = null;
+            globalStore.set(this.webglEnabledAtom, false);
+        }
+        if (renderer === "webgl") {
+            const addon = new WebglAddon();
+            this.webglContextLossDisposable = addon.onContextLoss(() => {
+                this.setTermRenderer("dom");
+            });
+            this.terminal.loadAddon(addon);
+            this.webglAddon = addon;
+            globalStore.set(this.webglEnabledAtom, true);
+            if (!loggedWebGL) {
+                console.log("loaded webgl!");
+                loggedWebGL = true;
+            }
+        }
+    }
+
+    getTermRenderer(): "webgl" | "dom" {
+        return this.webglAddon != null ? "webgl" : "dom";
+    }
+
+    isWebGlEnabled(): boolean {
+        return this.webglAddon != null;
+    }
 
     async initTerminal() {
         const copyOnSelectAtom = getSettingsKeyAtom("term:copyonselect");
+        const trimTrailingWhitespaceAtom = getSettingsKeyAtom("term:trimtrailingwhitespace");
         this.toDispose.push(this.terminal.onData(this.handleTermData.bind(this)));
-        this.toDispose.push(this.terminal.onKey(this.onKeyHandler.bind(this)));
         this.toDispose.push(
             this.terminal.onSelectionChange(
                 debounce(50, () => {
                     if (!globalStore.get(copyOnSelectAtom)) {
                         return;
                     }
-                    const selectedText = this.terminal.getSelection();
+                    // Don't copy-on-select when the search bar is open — navigating
+                    // search results changes the terminal selection programmatically.
+                    if (document.querySelector(".search-container") != null) {
+                        return;
+                    }
+                    let selectedText = this.terminal.getSelection();
                     if (selectedText.length > 0) {
+                        if (globalStore.get(trimTrailingWhitespaceAtom) !== false) {
+                            selectedText = trimTerminalSelection(selectedText);
+                        }
                         navigator.clipboard.writeText(selectedText);
                     }
                 })
@@ -492,49 +408,26 @@ export class TermWrap {
             this.toDispose.push(this.searchAddon.onDidChangeResults(this.onSearchResultsDidChange.bind(this)));
         }
 
-        // Register IME composition event listeners on the xterm.js textarea
-        const textareaElem = this.connectElem.querySelector("textarea");
-        if (textareaElem) {
-            textareaElem.addEventListener("compositionstart", this.handleCompositionStart);
-            textareaElem.addEventListener("compositionupdate", this.handleCompositionUpdate);
-            textareaElem.addEventListener("compositionend", this.handleCompositionEnd);
-
-            // Handle blur during composition - reset state to avoid stale data
-            const blurHandler = () => {
-                if (this.isComposing) {
-                    dlog("Terminal lost focus during composition, resetting IME state");
-                    this.resetCompositionState();
-                }
-            };
-            textareaElem.addEventListener("blur", blurHandler);
-
-            this.toDispose.push({
-                dispose: () => {
-                    textareaElem.removeEventListener("compositionstart", this.handleCompositionStart);
-                    textareaElem.removeEventListener("compositionupdate", this.handleCompositionUpdate);
-                    textareaElem.removeEventListener("compositionend", this.handleCompositionEnd);
-                    textareaElem.removeEventListener("blur", blurHandler);
-                },
-            });
-        }
-
-        this.mainFileSubject = getFileSubject(this.blockId, TermFileName);
+        this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
         this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
 
         try {
             const rtInfo = await RpcApi.GetRTInfoCommand(TabRpcClient, {
                 oref: WOS.makeORef("block", this.blockId),
             });
+            let shellState: ShellIntegrationStatus = null;
 
             if (rtInfo && rtInfo["shell:integration"]) {
-                const shellState = rtInfo["shell:state"] as ShellIntegrationStatus;
+                shellState = rtInfo["shell:state"] as ShellIntegrationStatus;
                 globalStore.set(this.shellIntegrationStatusAtom, shellState || null);
             } else {
                 globalStore.set(this.shellIntegrationStatusAtom, null);
             }
 
             const lastCmd = rtInfo ? rtInfo["shell:lastcmd"] : null;
+            const isCC = shellState === "running-command" && isClaudeCodeCommand(lastCmd);
             globalStore.set(this.lastCommandAtom, lastCmd || null);
+            globalStore.set(this.claudeCodeActiveAtom, isCC);
         } catch (e) {
             console.log("Error loading runtime info:", e);
         }
@@ -551,14 +444,20 @@ export class TermWrap {
         this.promptMarkers.forEach((marker) => {
             try {
                 marker.dispose();
-            } catch (_) {}
+            } catch (_) {
+                /* nothing */
+            }
         });
         this.promptMarkers = [];
+        this.webglContextLossDisposable?.dispose();
+        this.webglContextLossDisposable = null;
         this.terminal.dispose();
         this.toDispose.forEach((d) => {
             try {
                 d.dispose();
-            } catch (_) {}
+            } catch (_) {
+                /* nothing */
+            }
         });
         this.mainFileSubject.release();
     }
@@ -568,47 +467,8 @@ export class TermWrap {
             return;
         }
 
-        // IME Composition Handling
-        // Block all data during composition - only send the final text after compositionend
-        // This prevents xterm.js from sending intermediate composition data (e.g., during compositionupdate)
-        if (this.isComposing) {
-            dlog("Blocked data during composition:", data);
-            return;
-        }
-
-        if (this.pasteActive) {
-            if (this.multiInputCallback) {
-                this.multiInputCallback(data);
-            }
-        }
-
-        // IME Deduplication (for Capslock input method switching)
-        // When switching input methods with Capslock during composition, some systems send the
-        // composed text twice. We allow the first send and block subsequent duplicates.
-        const IMEDedupWindowMs = 50;
-        const now = Date.now();
-        const timeSinceCompositionEnd = now - this.lastCompositionEnd;
-        if (timeSinceCompositionEnd < IMEDedupWindowMs && data === this.lastComposedText && this.lastComposedText) {
-            if (!this.firstDataAfterCompositionSent) {
-                // First send after composition - allow it but mark as sent
-                this.firstDataAfterCompositionSent = true;
-                dlog("First data after composition, allowing:", data);
-            } else {
-                // Second send of the same data - this is a duplicate from Capslock switching, block it
-                dlog("Blocked duplicate IME data:", data);
-                this.lastComposedText = ""; // Clear to allow same text to be typed again later
-                this.firstDataAfterCompositionSent = false;
-                return;
-            }
-        }
-
         this.sendDataHandler?.(data);
-    }
-
-    onKeyHandler(data: { key: string; domEvent: KeyboardEvent }) {
-        if (this.multiInputCallback) {
-            this.multiInputCallback(data.key);
-        }
+        this.multiInputCallback?.(data);
     }
 
     addFocusListener(focusFn: () => void) {
@@ -633,8 +493,15 @@ export class TermWrap {
     }
 
     doTerminalWrite(data: string | Uint8Array, setPtyOffset?: number): Promise<void> {
+        if (isDev() && this.loaded) {
+            const dataStr = data instanceof Uint8Array ? new TextDecoder().decode(data) : data;
+            this.recentWrites.push({ idx: this.recentWritesCounter++, ts: Date.now(), data: dataStr });
+            if (this.recentWrites.length > 50) {
+                this.recentWrites.shift();
+            }
+        }
         let resolve: () => void = null;
-        let prtn = new Promise<void>((presolve, _) => {
+        const prtn = new Promise<void>((presolve, _) => {
             resolve = presolve;
         });
         this.terminal.write(data, () => {
@@ -651,8 +518,9 @@ export class TermWrap {
     }
 
     async loadInitialTerminalData(): Promise<void> {
-        let startTs = Date.now();
-        const { data: cacheData, fileInfo: cacheFile } = await fetchWaveFile(this.blockId, TermCacheFileName);
+        const startTs = Date.now();
+        const zoneId = this.getZoneId();
+        const { data: cacheData, fileInfo: cacheFile } = await fetchWaveFile(zoneId, TermCacheFileName);
         let ptyOffset = 0;
         if (cacheFile != null) {
             ptyOffset = cacheFile.meta["ptyoffset"] ?? 0;
@@ -674,7 +542,7 @@ export class TermWrap {
                 }
             }
         }
-        const { data: mainData, fileInfo: mainFile } = await fetchWaveFile(this.blockId, TermFileName, ptyOffset);
+        const { data: mainData, fileInfo: mainFile } = await fetchWaveFile(zoneId, TermFileName, ptyOffset);
         console.log(
             `terminal loaded cachefile:${cacheData?.byteLength ?? 0} main:${mainData?.byteLength ?? 0} bytes, ${Date.now() - startTs}ms`
         );
@@ -685,11 +553,10 @@ export class TermWrap {
 
     async resyncController(reason: string) {
         dlog("resync controller", this.blockId, reason);
-        const tabId = globalStore.get(atoms.staticTabId);
         const rtOpts: RuntimeOpts = { termsize: { rows: this.terminal.rows, cols: this.terminal.cols } };
         try {
             await RpcApi.ControllerResyncCommand(TabRpcClient, {
-                tabid: tabId,
+                tabid: this.tabId,
                 blockid: this.blockId,
                 rtopts: rtOpts,
             });
@@ -704,12 +571,13 @@ export class TermWrap {
         this.fitAddon.fit();
         if (oldRows !== this.terminal.rows || oldCols !== this.terminal.cols) {
             const termSize: TermSize = { rows: this.terminal.rows, cols: this.terminal.cols };
-            const wsCommand: SetBlockTermSizeWSCommand = {
-                wscommand: "setblocktermsize",
-                blockid: this.blockId,
-                termsize: termSize,
-            };
-            sendWSCommand(wsCommand);
+            console.log(
+                "[termwrap] resize",
+                `${oldRows}x${oldCols}`,
+                "->",
+                `${this.terminal.rows}x${this.terminal.cols}`
+            );
+            RpcApi.ControllerInputCommand(TabRpcClient, { blockid: this.blockId, termsize: termSize });
         }
         dlog("resize", `${this.terminal.rows}x${this.terminal.cols}`, `${oldRows}x${oldCols}`, this.hasResized);
         if (!this.hasResized) {
@@ -768,5 +636,14 @@ export class TermWrap {
                 this.pasteActive = false;
             }, 30);
         }
+    }
+
+    getScrollbackContent(): string {
+        if (!this.terminal) {
+            return "";
+        }
+        const buffer = this.terminal.buffer.active;
+        const lines = bufferLinesToText(buffer, 0, buffer.length);
+        return lines.join("\n");
     }
 }

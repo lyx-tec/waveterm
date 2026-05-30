@@ -43,8 +43,7 @@ var (
 	globalRateLimitInfo = &uctypes.RateLimitInfo{Unknown: true}
 	rateLimitLock       sync.Mutex
 
-	activeToolMap = ds.MakeSyncMap[bool]() // key is toolcallid
-	activeChats   = ds.MakeSyncMap[bool]() // key is chatid
+	activeChats = ds.MakeSyncMap[bool]() // key is chatid
 )
 
 func getSystemPrompt(apiType string, model string, isBuilder bool, hasToolsCapability bool, widgetAccess bool) []string {
@@ -72,7 +71,7 @@ func isLocalEndpoint(endpoint string) bool {
 	return strings.Contains(endpointLower, "localhost") || strings.Contains(endpointLower, "127.0.0.1")
 }
 
-func getWaveAISettings(premium bool, builderMode bool, rtInfo waveobj.ObjRTInfo) (*uctypes.AIOptsType, error) {
+func getWaveAISettings(premium bool, builderMode bool, rtInfo waveobj.ObjRTInfo, aiModeName string) (*uctypes.AIOptsType, error) {
 	maxTokens := DefaultMaxTokens
 	if builderMode {
 		maxTokens = BuilderMaxTokens
@@ -80,9 +79,12 @@ func getWaveAISettings(premium bool, builderMode bool, rtInfo waveobj.ObjRTInfo)
 	if rtInfo.WaveAIMaxOutputTokens > 0 {
 		maxTokens = rtInfo.WaveAIMaxOutputTokens
 	}
-	aiMode, config, err := resolveAIMode(rtInfo.WaveAIMode, premium)
+	aiMode, config, err := resolveAIMode(aiModeName, premium)
 	if err != nil {
 		return nil, err
+	}
+	if config.WaveAICloud && !telemetry.IsTelemetryEnabled() {
+		return nil, fmt.Errorf("Wave AI cloud modes require telemetry to be enabled")
 	}
 	apiToken := config.APIToken
 	if apiToken == "" && config.APITokenSecretName != "" {
@@ -108,14 +110,20 @@ func getWaveAISettings(premium bool, builderMode bool, rtInfo waveobj.ObjRTInfo)
 	if thinkingLevel == "" {
 		thinkingLevel = uctypes.ThinkingLevelMedium
 	}
+	verbosity := config.Verbosity
+	if verbosity == "" {
+		verbosity = uctypes.VerbosityLevelMedium // default to medium
+	}
 	opts := &uctypes.AIOptsType{
 		Provider:      config.Provider,
 		APIType:       config.APIType,
 		Model:         config.Model,
 		MaxTokens:     maxTokens,
 		ThinkingLevel: thinkingLevel,
+		Verbosity:     verbosity,
 		AIMode:        aiMode,
 		Endpoint:      baseUrl,
+		ProxyURL:      config.ProxyURL,
 		Capabilities:  config.Capabilities,
 		WaveAIPremium: config.WaveAIPremium,
 	}
@@ -249,11 +257,12 @@ func processToolCallInternal(backend UseChatBackend, toolCall uctypes.WaveToolCa
 
 	if toolCall.ToolUseData.Approval == uctypes.ApprovalNeedsApproval {
 		log.Printf("  waiting for approval...\n")
-		approval := WaitForToolApproval(toolCall.ID)
-		log.Printf("  approval result: %q\n", approval)
-		if approval != "" {
-			toolCall.ToolUseData.Approval = approval
+		approval, err := WaitForToolApproval(sseHandler.Context(), toolCall.ID)
+		if err != nil || approval == "" {
+			approval = uctypes.ApprovalCanceled
 		}
+		log.Printf("  approval result: %q\n", approval)
+		toolCall.ToolUseData.Approval = approval
 
 		if !toolCall.ToolUseData.IsApproved() {
 			errorMsg := "Tool use denied or timed out"
@@ -261,6 +270,8 @@ func processToolCallInternal(backend UseChatBackend, toolCall uctypes.WaveToolCa
 				errorMsg = "Tool use denied by user"
 			} else if approval == uctypes.ApprovalTimeout {
 				errorMsg = "Tool approval timed out"
+			} else if approval == uctypes.ApprovalCanceled {
+				errorMsg = "Tool approval canceled"
 			}
 			toolCall.ToolUseData.Status = uctypes.ToolUseStatusError
 			toolCall.ToolUseData.ErrorMessage = errorMsg
@@ -315,12 +326,7 @@ func processToolCall(backend UseChatBackend, toolCall uctypes.WaveToolCall, chat
 	return result
 }
 
-func processToolCalls(backend UseChatBackend, stopReason *uctypes.WaveStopReason, chatOpts uctypes.WaveChatOpts, sseHandler *sse.SSEHandlerCh, metrics *uctypes.AIMetrics) {
-	for _, toolCall := range stopReason.ToolCalls {
-		activeToolMap.Set(toolCall.ID, true)
-		defer activeToolMap.Delete(toolCall.ID)
-	}
-
+func processAllToolCalls(backend UseChatBackend, stopReason *uctypes.WaveStopReason, chatOpts uctypes.WaveChatOpts, sseHandler *sse.SSEHandlerCh, metrics *uctypes.AIMetrics) {
 	// Create and send all data-tooluse packets at the beginning
 	for i := range stopReason.ToolCalls {
 		toolCall := &stopReason.ToolCalls[i]
@@ -337,24 +343,45 @@ func processToolCalls(backend UseChatBackend, stopReason *uctypes.WaveStopReason
 		log.Printf("AI data-tooluse %s\n", toolCall.ID)
 		_ = sseHandler.AiMsgData("data-tooluse", toolCall.ID, toolUseData)
 		updateToolUseDataInChat(backend, chatOpts, toolCall.ID, toolUseData)
-		if toolUseData.Approval == uctypes.ApprovalNeedsApproval && chatOpts.RegisterToolApproval != nil {
-			chatOpts.RegisterToolApproval(toolCall.ID)
+		if toolUseData.Approval == uctypes.ApprovalNeedsApproval {
+			RegisterToolApproval(toolCall.ID, sseHandler)
 		}
 	}
 	// At this point, all ToolCalls are guaranteed to have non-nil ToolUseData
 
 	var toolResults []uctypes.AIToolResult
 	for _, toolCall := range stopReason.ToolCalls {
+		if sseHandler.Err() != nil {
+			log.Printf("AI tool processing stopped: %v\n", sseHandler.Err())
+			break
+		}
 		result := processToolCall(backend, toolCall, chatOpts, sseHandler, metrics)
 		toolResults = append(toolResults, result)
 	}
 
-	toolResultMsgs, err := backend.ConvertToolResultsToNativeChatMessage(toolResults)
-	if err != nil {
-		log.Printf("Failed to convert tool results to native chat messages: %v", err)
-	} else {
-		for _, msg := range toolResultMsgs {
-			chatstore.DefaultChatStore.PostMessage(chatOpts.ChatId, &chatOpts.Config, msg)
+	// Cleanup: unregister approvals, remove incomplete/canceled tool calls, and filter results
+	var filteredResults []uctypes.AIToolResult
+	for i, toolCall := range stopReason.ToolCalls {
+		UnregisterToolApproval(toolCall.ID)
+		hasResult := i < len(toolResults)
+		shouldRemove := !hasResult || (toolCall.ToolUseData != nil && toolCall.ToolUseData.Approval == uctypes.ApprovalCanceled)
+		if shouldRemove {
+			backend.RemoveToolUseCall(chatOpts.ChatId, toolCall.ID)
+		} else if hasResult {
+			filteredResults = append(filteredResults, toolResults[i])
+		}
+	}
+
+	if len(filteredResults) > 0 {
+		toolResultMsgs, err := backend.ConvertToolResultsToNativeChatMessage(filteredResults)
+		if err != nil {
+			log.Printf("Failed to convert tool results to native chat messages: %v", err)
+		} else {
+			for _, msg := range toolResultMsgs {
+				if err := chatstore.DefaultChatStore.PostMessage(chatOpts.ChatId, &chatOpts.Config, msg); err != nil {
+					log.Printf("Failed to post tool result message: %v", err)
+				}
+			}
 		}
 	}
 }
@@ -412,6 +439,9 @@ func RunAIChat(ctx context.Context, sseHandler *sse.SSEHandlerCh, backend UseCha
 				metrics.PremiumReqCount++
 			}
 		}
+		if stopReason != nil {
+			logutil.DevPrintf("stopreason: %s (%s) (%s) (%s)\n", stopReason.Kind, stopReason.ErrorText, stopReason.ErrorType, stopReason.RawReason)
+		}
 		if len(rtnMessages) > 0 {
 			usage := getUsage(rtnMessages)
 			log.Printf("usage: input=%d output=%d websearch=%d\n", usage.InputTokens, usage.OutputTokens, usage.NativeWebSearchCount)
@@ -434,7 +464,9 @@ func RunAIChat(ctx context.Context, sseHandler *sse.SSEHandlerCh, backend UseCha
 		}
 		for _, msg := range rtnMessages {
 			if msg != nil {
-				chatstore.DefaultChatStore.PostMessage(chatOpts.ChatId, &chatOpts.Config, msg)
+				if err := chatstore.DefaultChatStore.PostMessage(chatOpts.ChatId, &chatOpts.Config, msg); err != nil {
+					log.Printf("Failed to post message: %v", err)
+				}
 			}
 		}
 		firstStep = false
@@ -448,7 +480,7 @@ func RunAIChat(ctx context.Context, sseHandler *sse.SSEHandlerCh, backend UseCha
 		}
 		if stopReason != nil && stopReason.Kind == uctypes.StopKindToolUse {
 			metrics.ToolUseCount += len(stopReason.ToolCalls)
-			processToolCalls(backend, stopReason, chatOpts, sseHandler, metrics)
+			processAllToolCalls(backend, stopReason, chatOpts, sseHandler, metrics)
 			cont = &uctypes.WaveContinueResponse{
 				Model:            chatOpts.Config.Model,
 				ContinueFromKind: uctypes.StopKindToolUse,
@@ -597,6 +629,7 @@ type PostMessageRequest struct {
 	ChatID       string            `json:"chatid"`
 	Msg          uctypes.AIMessage `json:"msg"`
 	WidgetAccess bool              `json:"widgetaccess,omitempty"`
+	AIMode       string            `json:"aimode"`
 }
 
 func WaveAIPostMessageHandler(w http.ResponseWriter, r *http.Request) {
@@ -637,28 +670,24 @@ func WaveAIPostMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get WaveAI settings
-	premium := shouldUsePremium()
 	builderMode := req.BuilderId != ""
-	aiOpts, err := getWaveAISettings(premium, builderMode, *rtInfo)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("WaveAI configuration error: %v", err), http.StatusInternalServerError)
+	premium := shouldUsePremium() || builderMode
+	if req.AIMode == "" {
+		http.Error(w, "aimode is required in request body", http.StatusBadRequest)
 		return
 	}
-
-	// Get client ID from database
-	client, err := wstore.DBGetSingleton[*waveobj.Client](r.Context())
+	aiOpts, err := getWaveAISettings(premium, builderMode, *rtInfo, req.AIMode)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get client: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("WaveAI configuration error: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	// Call the core WaveAIPostMessage function
 	chatOpts := uctypes.WaveChatOpts{
 		ChatId:               req.ChatID,
-		ClientId:             client.OID,
+		ClientId:             wstore.GetClientId(),
 		Config:               *aiOpts,
 		WidgetAccess:         req.WidgetAccess,
-		RegisterToolApproval: RegisterToolApproval,
 		AllowNativeWebSearch: true,
 		BuilderId:            req.BuilderId,
 		BuilderAppId:         req.BuilderAppId,

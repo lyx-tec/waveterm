@@ -13,13 +13,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/blocklogger"
 	"github.com/wavetermdev/waveterm/pkg/filestore"
+	"github.com/wavetermdev/waveterm/pkg/jobcontroller"
 	"github.com/wavetermdev/waveterm/pkg/remote"
 	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
+	"github.com/wavetermdev/waveterm/pkg/util/ds"
+	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wps"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 	"github.com/wavetermdev/waveterm/pkg/wslconn"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
@@ -37,7 +42,7 @@ const (
 )
 
 const (
-	DefaultTermMaxFileSize = 256 * 1024
+	DefaultTermMaxFileSize = 2 * 1024 * 1024
 	DefaultHtmlMaxFileSize = 256 * 1024
 	MaxInitScriptSize      = 50 * 1024
 )
@@ -53,7 +58,7 @@ type BlockInputUnion struct {
 
 type BlockControllerRuntimeStatus struct {
 	BlockId           string `json:"blockid"`
-	Version           int    `json:"version"`
+	Version           int64  `json:"version"`
 	ShellProcStatus   string `json:"shellprocstatus,omitempty"`
 	ShellProcConnName string `json:"shellprocconnname,omitempty"`
 	ShellProcExitCode int    `json:"shellprocexitcode"`
@@ -63,16 +68,24 @@ type BlockControllerRuntimeStatus struct {
 // Controller interface that all block controllers must implement
 type Controller interface {
 	Start(ctx context.Context, blockMeta waveobj.MetaMapType, rtOpts *waveobj.RuntimeOpts, force bool) error
-	Stop(graceful bool, newStatus string) error
-	GetRuntimeStatus() *BlockControllerRuntimeStatus
+	Stop(graceful bool, newStatus string, destroy bool)
+	GetRuntimeStatus() *BlockControllerRuntimeStatus // does not return nil
+	GetConnName() string
 	SendInput(input *BlockInputUnion) error
 }
 
 // Registry for all controllers
 var (
-	controllerRegistry = make(map[string]Controller)
-	registryLock       sync.RWMutex
+	controllerRegistry  = make(map[string]Controller)
+	registryLock        sync.RWMutex
+	blockResyncMutexMap = ds.MakeSyncMap[*sync.Mutex]()
 )
+
+func getBlockResyncMutex(blockId string) *sync.Mutex {
+	return blockResyncMutexMap.GetOrCreate(blockId, func() *sync.Mutex {
+		return &sync.Mutex{}
+	})
+}
 
 // Registry operations
 func getController(blockId string) Controller {
@@ -93,7 +106,7 @@ func registerController(blockId string, controller Controller) {
 	registryLock.Unlock()
 
 	if existingController != nil {
-		existingController.Stop(false, Status_Done)
+		existingController.Stop(false, Status_Done, true)
 		wstore.DeleteRTInfo(waveobj.MakeORef(waveobj.OType_Block, blockId))
 	}
 }
@@ -115,6 +128,24 @@ func getAllControllers() map[string]Controller {
 	return result
 }
 
+func InitBlockController() {
+	rpcClient := wshclient.GetBareRpcClient()
+	rpcClient.EventListener.On(wps.Event_BlockClose, handleBlockCloseEvent)
+	wshclient.EventSubCommand(rpcClient, wps.SubscriptionRequest{
+		Event:     wps.Event_BlockClose,
+		AllScopes: true,
+	}, nil)
+}
+
+func handleBlockCloseEvent(event *wps.WaveEvent) {
+	blockId, ok := event.Data.(string)
+	if !ok {
+		log.Printf("[blockclose] invalid event data type")
+		return
+	}
+	go DestroyBlockController(blockId)
+}
+
 // Public API Functions
 
 func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts *waveobj.RuntimeOpts, force bool) error {
@@ -122,34 +153,56 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 		return fmt.Errorf("invalid tabId or blockId passed to ResyncController")
 	}
 
+	mu := getBlockResyncMutex(blockId)
+	mu.Lock()
+	defer mu.Unlock()
+
 	blockData, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
 	if err != nil {
 		return fmt.Errorf("error getting block: %w", err)
 	}
 
 	controllerName := blockData.Meta.GetString(waveobj.MetaKey_Controller, "")
+	connName := blockData.Meta.GetString(waveobj.MetaKey_Connection, "")
 
 	// Get existing controller
 	existing := getController(blockId)
 
+	// Check for connection change FIRST - always destroy on conn change
+	if existing != nil {
+		existingConnName := existing.GetConnName()
+		if existingConnName != connName {
+			log.Printf("stopping blockcontroller %s due to conn change (from %q to %q)\n", blockId, existingConnName, connName)
+			DestroyBlockController(blockId)
+			time.Sleep(100 * time.Millisecond)
+			existing = nil
+		}
+	}
+
 	// If no controller needed, stop existing if present
 	if controllerName == "" {
 		if existing != nil {
-			StopBlockController(blockId)
-			deleteController(blockId)
+			DestroyBlockController(blockId)
 		}
 		return nil
 	}
 
+	// Determine if we should use DurableShellController vs ShellController
+	shouldUseDurableShellController := controllerName == BlockController_Shell && jobcontroller.IsBlockIdTermDurable(blockId)
+
 	// Check if we need to morph controller type
 	if existing != nil {
-		existingStatus := existing.GetRuntimeStatus()
 		needsReplace := false
 
-		// Determine if existing controller type matches what we need
 		switch existing.(type) {
 		case *ShellController:
 			if controllerName != BlockController_Shell && controllerName != BlockController_Cmd {
+				needsReplace = true
+			} else if shouldUseDurableShellController {
+				needsReplace = true
+			}
+		case *DurableShellController:
+			if !shouldUseDurableShellController {
 				needsReplace = true
 			}
 		case *TsunamiController:
@@ -160,31 +213,28 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 
 		if needsReplace {
 			log.Printf("stopping blockcontroller %s due to controller type change\n", blockId)
-			StopBlockController(blockId)
+			DestroyBlockController(blockId)
 			time.Sleep(100 * time.Millisecond)
-			deleteController(blockId)
 			existing = nil
-		}
-
-		// For shell/cmd, check if connection changed
-		if !needsReplace && (controllerName == BlockController_Shell || controllerName == BlockController_Cmd) {
-			connName := blockData.Meta.GetString(waveobj.MetaKey_Connection, "")
-			// Check if connection changed, including between different local connections
-			if existingStatus.ShellProcStatus == Status_Running && existingStatus.ShellProcConnName != connName {
-				log.Printf("stopping blockcontroller %s due to conn change (from %q to %q)\n", blockId, existingStatus.ShellProcConnName, connName)
-				StopBlockControllerAndSetStatus(blockId, Status_Init)
-				time.Sleep(100 * time.Millisecond)
-				// Don't delete, will reuse same controller type
-				existing = getController(blockId)
-			}
 		}
 	}
 
 	// Force restart if requested
 	if force && existing != nil {
-		StopBlockController(blockId)
+		DestroyBlockController(blockId)
 		time.Sleep(100 * time.Millisecond)
-		existing = getController(blockId)
+		existing = nil
+	}
+
+	// Destroy done controllers before restarting
+	if existing != nil {
+		status := existing.GetRuntimeStatus()
+		if status.ShellProcStatus == Status_Done {
+			log.Printf("destroying blockcontroller %s with done status before restart\n", blockId)
+			DestroyBlockController(blockId)
+			time.Sleep(100 * time.Millisecond)
+			existing = nil
+		}
 	}
 
 	// Create or restart controller
@@ -195,11 +245,15 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 		// Create new controller based on type
 		switch controllerName {
 		case BlockController_Shell, BlockController_Cmd:
-			controller = MakeShellController(tabId, blockId, controllerName)
+			if shouldUseDurableShellController {
+				controller = MakeDurableShellController(tabId, blockId, controllerName, connName)
+			} else {
+				controller = MakeShellController(tabId, blockId, controllerName, connName)
+			}
 			registerController(blockId, controller)
 
 		case BlockController_Tsunami:
-			controller = MakeTsunamiController(tabId, blockId)
+			controller = MakeTsunamiController(tabId, blockId, connName)
 			registerController(blockId, controller)
 
 		default:
@@ -209,10 +263,9 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 
 	// Check if we need to start/restart
 	status := controller.GetRuntimeStatus()
-	if status.ShellProcStatus == Status_Init || status.ShellProcStatus == Status_Done {
+	if status.ShellProcStatus == Status_Init {
 		// For shell/cmd, check connection status first (for non-local connections)
 		if controllerName == BlockController_Shell || controllerName == BlockController_Cmd {
-			connName := blockData.Meta.GetString(waveobj.MetaKey_Connection, "")
 			if !conncontroller.IsLocalConnName(connName) {
 				err = CheckConnStatus(blockId)
 				if err != nil {
@@ -239,22 +292,33 @@ func GetBlockControllerRuntimeStatus(blockId string) *BlockControllerRuntimeStat
 	return controller.GetRuntimeStatus()
 }
 
-func StopBlockController(blockId string) {
+func DestroyBlockController(blockId string) {
 	controller := getController(blockId)
 	if controller == nil {
 		return
 	}
-	controller.Stop(true, Status_Done)
+	controller.Stop(true, Status_Done, true)
 	wstore.DeleteRTInfo(waveobj.MakeORef(waveobj.OType_Block, blockId))
+	deleteController(blockId)
 }
 
-func StopBlockControllerAndSetStatus(blockId string, newStatus string) {
-	controller := getController(blockId)
-	if controller == nil {
+func sendConnMonitorInputNotification(controller Controller) {
+	connName := controller.GetConnName()
+	if connName == "" || conncontroller.IsLocalConnName(connName) || conncontroller.IsWslConnName(connName) {
 		return
 	}
-	controller.Stop(true, newStatus)
-	wstore.DeleteRTInfo(waveobj.MakeORef(waveobj.OType_Block, blockId))
+
+	connOpts, parseErr := remote.ParseOpts(connName)
+	if parseErr != nil {
+		return
+	}
+	sshConn := conncontroller.MaybeGetConn(connOpts)
+	if sshConn != nil {
+		monitor := sshConn.GetMonitor()
+		if monitor != nil {
+			monitor.NotifyInput()
+		}
+	}
 }
 
 func SendInput(blockId string, inputUnion *BlockInputUnion) error {
@@ -262,16 +326,18 @@ func SendInput(blockId string, inputUnion *BlockInputUnion) error {
 	if controller == nil {
 		return fmt.Errorf("no controller found for block %s", blockId)
 	}
+	sendConnMonitorInputNotification(controller)
 	return controller.SendInput(inputUnion)
 }
 
-func StopAllBlockControllers() {
+// only call this on shutdown
+func StopAllBlockControllersForShutdown() {
 	controllers := getAllControllers()
 	for blockId, controller := range controllers {
 		status := controller.GetRuntimeStatus()
 		if status != nil && status.ShellProcStatus == Status_Running {
 			go func(id string, c Controller) {
-				c.Stop(true, Status_Done)
+				c.Stop(true, Status_Done, false)
 				wstore.DeleteRTInfo(waveobj.MakeORef(waveobj.OType_Block, id))
 			}(blockId, controller)
 		}
@@ -379,10 +445,50 @@ func CheckConnStatus(blockId string) error {
 	if err != nil {
 		return fmt.Errorf("error parsing connection name: %w", err)
 	}
-	conn := conncontroller.GetConn(opts)
+	conn := conncontroller.MaybeGetConn(opts)
+	if conn == nil {
+		return fmt.Errorf("no connection found")
+	}
 	connStatus := conn.DeriveConnStatus()
 	if connStatus.Status != conncontroller.Status_Connected {
 		return fmt.Errorf("not connected: %s", connStatus.Status)
 	}
 	return nil
+}
+
+func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, blockMeta waveobj.MetaMapType, remoteName string, shellType string) *shellutil.TokenSwapEntry {
+	token := &shellutil.TokenSwapEntry{
+		Token: uuid.New().String(),
+		Env:   make(map[string]string),
+		Exp:   time.Now().Add(5 * time.Minute),
+	}
+	token.Env["TERM_PROGRAM"] = "waveterm"
+	token.Env["WAVETERM_BLOCKID"] = blockId
+	token.Env["WAVETERM_VERSION"] = wavebase.WaveVersion
+	token.Env["WAVETERM"] = "1"
+	tabId, err := wstore.DBFindTabForBlockId(ctx, blockId)
+	if err != nil {
+		log.Printf("error finding tab for block: %v\n", err)
+	} else {
+		token.Env["WAVETERM_TABID"] = tabId
+	}
+	if tabId != "" {
+		wsId, err := wstore.DBFindWorkspaceForTabId(ctx, tabId)
+		if err != nil {
+			log.Printf("error finding workspace for tab: %v\n", err)
+		} else {
+			token.Env["WAVETERM_WORKSPACEID"] = wsId
+		}
+	}
+	token.Env["WAVETERM_CLIENTID"] = wstore.GetClientId()
+	token.Env["WAVETERM_CONN"] = remoteName
+	envMap, err := resolveEnvMap(blockId, blockMeta, remoteName)
+	if err != nil {
+		log.Printf("error resolving env map: %v\n", err)
+	}
+	for k, v := range envMap {
+		token.Env[k] = v
+	}
+	token.ScriptText = getCustomInitScript(logCtx, blockMeta, remoteName, shellType)
+	return token
 }

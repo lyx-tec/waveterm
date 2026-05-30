@@ -37,15 +37,16 @@ type TsunamiAppProc struct {
 }
 
 type TsunamiController struct {
-	blockId       string
-	tabId         string
-	runLock       sync.Mutex
-	tsunamiProc   *TsunamiAppProc
-	statusLock    sync.Mutex
-	status        string
-	statusVersion int
-	exitCode      int
-	port          int
+	blockId     string
+	tabId       string
+	connName    string
+	runLock     sync.Mutex
+	tsunamiProc *TsunamiAppProc
+	statusLock  sync.Mutex
+	status      string
+	versionTs   utilds.VersionTs
+	exitCode    int
+	port        int
 }
 
 func (c *TsunamiController) setManifestMetadata(appId string) {
@@ -235,13 +236,13 @@ func (c *TsunamiController) Start(ctx context.Context, blockMeta waveobj.MetaMap
 	return nil
 }
 
-func (c *TsunamiController) Stop(graceful bool, newStatus string) error {
+func (c *TsunamiController) Stop(graceful bool, newStatus string, destroy bool) {
 	log.Printf("TsunamiController.Stop called for block %s (graceful: %t, newStatus: %s)", c.blockId, graceful, newStatus)
 	c.runLock.Lock()
 	defer c.runLock.Unlock()
 
 	if c.tsunamiProc == nil {
-		return nil
+		return
 	}
 
 	if c.tsunamiProc.Cmd.Process != nil {
@@ -262,17 +263,16 @@ func (c *TsunamiController) Stop(graceful bool, newStatus string) error {
 	})
 	c.clearSchemas()
 	go c.sendStatusUpdate()
-	return nil
 }
 
 func (c *TsunamiController) GetRuntimeStatus() *BlockControllerRuntimeStatus {
 	var rtn *BlockControllerRuntimeStatus
 	c.WithStatusLock(func() {
-		c.statusVersion++
 		rtn = &BlockControllerRuntimeStatus{
 			BlockId:           c.blockId,
-			Version:           c.statusVersion,
+			Version:           c.versionTs.GetVersionTs(),
 			ShellProcStatus:   c.status,
+			ShellProcConnName: c.connName,
 			ShellProcExitCode: c.exitCode,
 		}
 
@@ -282,6 +282,10 @@ func (c *TsunamiController) GetRuntimeStatus() *BlockControllerRuntimeStatus {
 	})
 
 	return rtn
+}
+
+func (c *TsunamiController) GetConnName() string {
+	return c.connName
 }
 
 func (c *TsunamiController) SendInput(input *BlockInputUnion) error {
@@ -401,12 +405,13 @@ func runTsunamiAppBinary(ctx context.Context, appBinPath string, appPath string,
 	}
 }
 
-func MakeTsunamiController(tabId string, blockId string) Controller {
+func MakeTsunamiController(tabId string, blockId string, connName string) Controller {
 	log.Printf("make tsunami controller: %s %s\n", tabId, blockId)
 	return &TsunamiController{
-		blockId: blockId,
-		tabId:   tabId,
-		status:  Status_Init,
+		blockId:  blockId,
+		tabId:    tabId,
+		connName: connName,
+		status:   Status_Init,
 	}
 }
 

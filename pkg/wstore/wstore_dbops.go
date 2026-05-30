@@ -317,6 +317,31 @@ func DBUpdate(ctx context.Context, val waveobj.WaveObj) error {
 	})
 }
 
+func DBUpdateFn[T waveobj.WaveObj](ctx context.Context, id string, updateFn func(T)) error {
+	return WithTx(ctx, func(tx *TxWrap) error {
+		val, err := DBMustGet[T](tx.Context(), id)
+		if err != nil {
+			return err
+		}
+		updateFn(val)
+		return DBUpdate(tx.Context(), val)
+	})
+}
+
+func DBUpdateFnErr[T waveobj.WaveObj](ctx context.Context, id string, updateFn func(T) error) error {
+	return WithTx(ctx, func(tx *TxWrap) error {
+		val, err := DBMustGet[T](tx.Context(), id)
+		if err != nil {
+			return err
+		}
+		err = updateFn(val)
+		if err != nil {
+			return err
+		}
+		return DBUpdate(tx.Context(), val)
+	})
+}
+
 func DBInsert(ctx context.Context, val waveobj.WaveObj) error {
 	oid := waveobj.GetOID(val)
 	if oid == "" {
@@ -366,7 +391,6 @@ func DBFindTabForBlockId(ctx context.Context, blockId string) (string, error) {
 }
 
 func DBFindWorkspaceForTabId(ctx context.Context, tabId string) (string, error) {
-	log.Printf("DBFindWorkspaceForTabId tabId: %s\n", tabId)
 	return WithTxRtn(ctx, func(tx *TxWrap) (string, error) {
 		query := `
 			WITH variable(value) AS (
@@ -378,15 +402,9 @@ func DBFindWorkspaceForTabId(ctx context.Context, tabId string) (string, error) 
 				SELECT 1
 				FROM json_each(w.data, '$.tabids') AS je
 				WHERE je.value = variable.value
-			)
-			OR EXISTS (
-				SELECT 1
-				FROM json_each(w.data, '$.pinnedtabids') AS je
-				WHERE je.value = variable.value
 			);
 			`
 		wsId := tx.GetString(query, tabId)
-		log.Printf("DBFindWorkspaceForTabId wsId: %s\n", wsId)
 		return wsId, nil
 	})
 }

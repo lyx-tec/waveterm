@@ -54,7 +54,7 @@ const Link = ({
         }
     };
     return (
-        <a href={props.href} onClick={onClick}>
+        <a href={props.href} onClick={onClick} className="text-accent hover:underline">
             {props.children}
         </a>
     );
@@ -216,7 +216,7 @@ interface WaveBlockProps {
     blockmap: Map<string, MarkdownContentBlockType>;
 }
 
-const WaveBlock: React.FC<WaveBlockProps> = (props) => {
+function WaveBlock(props: WaveBlockProps) {
     const { blockkey, blockmap } = props;
     const block = blockmap.get(blockkey);
     if (block == null) {
@@ -237,7 +237,7 @@ const WaveBlock: React.FC<WaveBlockProps> = (props) => {
             </div>
         </div>
     );
-};
+}
 
 const MarkdownImg = ({
     props,
@@ -391,7 +391,7 @@ const Markdown = ({
                     return (
                         <a
                             key={item.href}
-                            className="toc-item"
+                            className="toc-item text-accent hover:underline"
                             style={{ "--indent-factor": item.depth } as React.CSSProperties}
                             onClick={() => setFocusedHeading(item.href)}
                         >

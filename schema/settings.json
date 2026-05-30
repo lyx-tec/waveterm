@@ -23,6 +23,33 @@
         "app:ctrlvpaste": {
           "type": "boolean"
         },
+        "app:confirmquit": {
+          "type": "boolean"
+        },
+        "app:hideaibutton": {
+          "type": "boolean"
+        },
+        "app:disablectrlshiftarrows": {
+          "type": "boolean"
+        },
+        "app:disablectrlshiftdisplay": {
+          "type": "boolean"
+        },
+        "app:focusfollowscursor": {
+          "type": "string",
+          "enum": [
+            "off",
+            "on",
+            "term"
+          ]
+        },
+        "app:tabbar": {
+          "type": "string",
+          "enum": [
+            "top",
+            "left"
+          ]
+        },
         "feature:waveappbuilder": {
           "type": "boolean"
         },
@@ -119,6 +146,34 @@
         "term:macoptionismeta": {
           "type": "boolean"
         },
+        "term:cursor": {
+          "type": "string"
+        },
+        "term:cursorblink": {
+          "type": "boolean"
+        },
+        "term:bellsound": {
+          "type": "boolean"
+        },
+        "term:bellindicator": {
+          "type": "boolean"
+        },
+        "term:osc52": {
+          "type": "string",
+          "enum": [
+            "focus",
+            "always"
+          ]
+        },
+        "term:durable": {
+          "type": "boolean"
+        },
+        "term:showsplitbuttons": {
+          "type": "boolean"
+        },
+        "term:trimtrailingwhitespace": {
+          "type": "boolean"
+        },
         "editor:minimapenabled": {
           "type": "boolean"
         },
@@ -146,12 +201,6 @@
         "web:defaultsearch": {
           "type": "string"
         },
-        "blockheader:*": {
-          "type": "boolean"
-        },
-        "blockheader:showblockids": {
-          "type": "boolean"
-        },
         "autoupdate:*": {
           "type": "boolean"
         },
@@ -176,7 +225,20 @@
         "preview:showhiddenfiles": {
           "type": "boolean"
         },
+        "preview:defaultsort": {
+          "type": "string",
+          "enum": [
+            "name",
+            "modtime"
+          ]
+        },
         "tab:preset": {
+          "type": "string"
+        },
+        "tab:confirmclose": {
+          "type": "boolean"
+        },
+        "tab:background": {
           "type": "string"
         },
         "widget:*": {
@@ -260,6 +322,9 @@
         "conn:wshenabled": {
           "type": "boolean"
         },
+        "conn:localhostdisplayname": {
+          "type": "string"
+        },
         "debug:*": {
           "type": "boolean"
         },
@@ -268,6 +333,9 @@
         },
         "debug:pprofmemprofilerate": {
           "type": "integer"
+        },
+        "debug:webglstatus": {
+          "type": "boolean"
         },
         "tsunami:*": {
           "type": "boolean"

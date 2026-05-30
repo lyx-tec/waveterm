@@ -34,7 +34,7 @@ on:
 
 env:
     NODE_VERSION: 22
-    GO_VERSION: "1.24"
+    GO_VERSION: "1.25.6"
 
 jobs:
     analyze:
@@ -76,7 +76,7 @@ jobs:
                   node-version: ${{env.NODE_VERSION}}
                   cache: npm
                   cache-dependency-path: package-lock.json
-            - uses: nick-fields/retry@v3
+            - uses: nick-fields/retry@v4
               name: npm ci
               with:
                   command: npm ci --no-audit --no-fund

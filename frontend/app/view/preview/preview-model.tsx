@@ -1,12 +1,12 @@
-// Copyright 2025, Command Line Inc.
+// Copyright 2026, Command Line Inc.
 // SPDX-License-Identifier: Apache-2.0
 
 import { BlockNodeModel } from "@/app/block/blocktypes";
 import { ContextMenuModel } from "@/app/store/contextmenu";
-import { RpcApi } from "@/app/store/wshclientapi";
+import { globalStore } from "@/app/store/jotaiStore";
+import type { TabModel } from "@/app/store/tab-model";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { getConnStatusAtom, getOverrideConfigAtom, getSettingsKeyAtom, globalStore, refocusNode } from "@/store/global";
-import * as services from "@/store/services";
+import { getOverrideConfigAtom, refocusNode } from "@/store/global";
 import * as WOS from "@/store/wos";
 import { goHistory, goHistoryBack, goHistoryForward } from "@/util/historyutil";
 import { checkKeyPressed } from "@/util/keyutil";
@@ -16,9 +16,11 @@ import { formatRemoteUri } from "@/util/waveutil";
 import clsx from "clsx";
 import { Atom, atom, Getter, PrimitiveAtom, WritableAtom } from "jotai";
 import { loadable } from "jotai/utils";
-import type * as MonacoTypes from "monaco-editor/esm/vs/editor/editor.api";
+import type * as MonacoTypes from "monaco-editor";
 import { createRef } from "react";
 import { PreviewView } from "./preview";
+import { makeDirectoryDefaultMenuItems } from "./preview-directory-utils";
+import type { PreviewEnv } from "./previewenv";
 
 // TODO drive this using config
 const BOOKMARKS: { label: string; path: string }[] = [
@@ -118,6 +120,7 @@ export class PreviewModel implements ViewModel {
     viewType: string;
     blockId: string;
     nodeModel: BlockNodeModel;
+    tabModel: TabModel;
     noPadding?: Atom<boolean>;
     blockAtom: Atom<Block>;
     viewIcon: Atom<string | IconButtonDecl>;
@@ -125,6 +128,7 @@ export class PreviewModel implements ViewModel {
     viewText: Atom<HeaderElem[]>;
     preIconButton: Atom<IconButtonDecl>;
     endIconButtons: Atom<IconButtonDecl[]>;
+    hideViewName: Atom<boolean>;
     previewTextRef: React.RefObject<HTMLDivElement>;
     editMode: Atom<boolean>;
     canPreview: PrimitiveAtom<boolean>;
@@ -164,14 +168,15 @@ export class PreviewModel implements ViewModel {
     refreshCallback: () => void;
     directoryKeyDownHandler: (waveEvent: WaveKeyboardEvent) => boolean;
     codeEditKeyDownHandler: (waveEvent: WaveKeyboardEvent) => boolean;
+    env: PreviewEnv;
 
-    showS3 = atom(true);
-
-    constructor(blockId: string, nodeModel: BlockNodeModel) {
+    constructor({ blockId, nodeModel, tabModel, waveEnv }: ViewModelInitType) {
         this.viewType = "preview";
         this.blockId = blockId;
         this.nodeModel = nodeModel;
-        let showHiddenFiles = globalStore.get(getSettingsKeyAtom("preview:showhiddenfiles")) ?? true;
+        this.tabModel = tabModel;
+        this.env = waveEnv;
+        let showHiddenFiles = globalStore.get(this.env.getSettingsKeyAtom("preview:showhiddenfiles")) ?? true;
         this.showHiddenFiles = atom<boolean>(showHiddenFiles);
         this.refreshVersion = atom(0);
         this.directorySearchActive = atom(false);
@@ -181,7 +186,7 @@ export class PreviewModel implements ViewModel {
         this.openFileError = atom(null) as PrimitiveAtom<string>;
         this.openFileModalGiveFocusRef = createRef();
         this.manageConnection = atom(true);
-        this.blockAtom = WOS.getWaveObjectAtom<Block>(`block:${blockId}`);
+        this.blockAtom = this.env.wos.getWaveObjectAtom<Block>(`block:${blockId}`);
         this.markdownShowToc = atom(false);
         this.filterOutNowsh = atom(true);
         this.monacoRef = createRef();
@@ -207,7 +212,7 @@ export class PreviewModel implements ViewModel {
                             label: `Go to ${bookmark.label} (${bookmark.path})`,
                             click: () => this.goHistory(bookmark.path),
                         }));
-                        ContextMenuModel.showContextMenu(menuItems, e);
+                        ContextMenuModel.getInstance().showContextMenu(menuItems, e);
                     },
                 };
             }
@@ -218,6 +223,7 @@ export class PreviewModel implements ViewModel {
             return blockData?.meta?.edit ?? false;
         });
         this.viewName = atom("Preview");
+        this.hideViewName = atom(true);
         this.viewText = atom((get) => {
             let headerPath = get(this.metaFilePath);
             const connStatus = get(this.connStatus);
@@ -332,6 +338,7 @@ export class PreviewModel implements ViewModel {
                     {
                         elemtype: "iconbutton",
                         icon: showHiddenFiles ? "eye" : "eye-slash",
+                        title: showHiddenFiles ? "Hide Hidden Files" : "Show Hidden Files",
                         click: () => {
                             globalStore.set(this.showHiddenFiles, (prev) => !prev);
                         },
@@ -349,6 +356,22 @@ export class PreviewModel implements ViewModel {
                         icon: "book",
                         title: "Table of Contents",
                         click: () => this.markdownShowTocToggle(),
+                    },
+                    {
+                        elemtype: "iconbutton",
+                        icon: "arrows-rotate",
+                        title: "Refresh",
+                        click: () => this.refreshCallback?.(),
+                    },
+                ] as IconButtonDecl[];
+            } else if (!isCeView && mimeType) {
+                // For all other file types (text, code, etc.), add refresh button
+                return [
+                    {
+                        elemtype: "iconbutton",
+                        icon: "arrows-rotate",
+                        title: "Refresh",
+                        click: () => this.refreshCallback?.(),
                     },
                 ] as IconButtonDecl[];
             }
@@ -368,7 +391,7 @@ export class PreviewModel implements ViewModel {
         this.connection = atom<Promise<string>>(async (get) => {
             const connName = get(this.blockAtom)?.meta?.connection;
             try {
-                await RpcApi.ConnEnsureCommand(TabRpcClient, { connname: connName }, { timeout: 60000 });
+                await this.env.rpc.ConnEnsureCommand(TabRpcClient, { connname: connName }, { timeout: 60000 });
                 globalStore.set(this.connectionError, "");
             } catch (e) {
                 globalStore.set(this.connectionError, e as string);
@@ -385,7 +408,7 @@ export class PreviewModel implements ViewModel {
                 return null;
             }
             try {
-                const statFile = await RpcApi.FileInfoCommand(TabRpcClient, {
+                const statFile = await this.env.rpc.FileInfoCommand(TabRpcClient, {
                     info: {
                         path,
                     },
@@ -408,13 +431,14 @@ export class PreviewModel implements ViewModel {
         this.goParentDirectory = this.goParentDirectory.bind(this);
 
         const fullFileAtom = atom<Promise<FileData>>(async (get) => {
+            get(this.refreshVersion); // Subscribe to refreshVersion to trigger re-fetch
             const fileName = get(this.metaFilePath);
             const path = await this.formatRemoteUri(fileName, get);
             if (fileName == null) {
                 return null;
             }
             try {
-                const file = await RpcApi.FileReadCommand(TabRpcClient, {
+                const file = await this.env.rpc.FileReadCommand(TabRpcClient, {
                     info: {
                         path,
                     },
@@ -460,7 +484,7 @@ export class PreviewModel implements ViewModel {
         this.connStatus = atom((get) => {
             const blockData = get(this.blockAtom);
             const connName = blockData?.meta?.connection;
-            const connAtom = getConnStatusAtom(connName);
+            const connAtom = this.env.getConnStatusAtom(connName);
             return get(connAtom);
         });
 
@@ -564,7 +588,7 @@ export class PreviewModel implements ViewModel {
             return;
         }
         const blockOref = WOS.makeORef("block", this.blockId);
-        await services.ObjectService.UpdateObjectMeta(blockOref, updateMeta);
+        await this.env.services.object.UpdateObjectMeta(blockOref, updateMeta);
 
         // Clear the saved file buffers
         globalStore.set(this.fileContentSaved, null);
@@ -600,7 +624,7 @@ export class PreviewModel implements ViewModel {
         }
         updateMeta.edit = false;
         const blockOref = WOS.makeORef("block", this.blockId);
-        await services.ObjectService.UpdateObjectMeta(blockOref, updateMeta);
+        await this.env.services.object.UpdateObjectMeta(blockOref, updateMeta);
     }
 
     async goHistoryForward() {
@@ -612,13 +636,13 @@ export class PreviewModel implements ViewModel {
         }
         updateMeta.edit = false;
         const blockOref = WOS.makeORef("block", this.blockId);
-        await services.ObjectService.UpdateObjectMeta(blockOref, updateMeta);
+        await this.env.services.object.UpdateObjectMeta(blockOref, updateMeta);
     }
 
     async setEditMode(edit: boolean) {
         const blockMeta = globalStore.get(this.blockAtom)?.meta;
         const blockOref = WOS.makeORef("block", this.blockId);
-        await services.ObjectService.UpdateObjectMeta(blockOref, { ...blockMeta, edit });
+        await this.env.services.object.UpdateObjectMeta(blockOref, { ...blockMeta, edit });
     }
 
     async handleFileSave() {
@@ -632,7 +656,7 @@ export class PreviewModel implements ViewModel {
             return;
         }
         try {
-            await RpcApi.FileWriteCommand(TabRpcClient, {
+            await this.env.rpc.FileWriteCommand(TabRpcClient, {
                 info: {
                     path: await this.formatRemoteUri(filePath, globalStore.get),
                 },
@@ -657,12 +681,6 @@ export class PreviewModel implements ViewModel {
     }
 
     async handleOpenFile(filePath: string) {
-        const conn = globalStore.get(this.connectionImmediate);
-        if (!isBlank(conn) && conn.startsWith("aws:")) {
-            if (!isBlank(filePath) && filePath != "/" && filePath.startsWith("/")) {
-                filePath = filePath.substring(1);
-            }
-        }
         const fileInfo = await globalStore.get(this.statFile);
         this.updateOpenFileModalAndError(false);
         if (fileInfo == null) {
@@ -683,7 +701,7 @@ export class PreviewModel implements ViewModel {
     }
 
     getSettingsMenuItems(): ContextMenuItem[] {
-        const defaultFontSize = globalStore.get(getSettingsKeyAtom("editor:fontsize")) ?? 12;
+        const defaultFontSize = globalStore.get(this.env.getSettingsKeyAtom("editor:fontsize")) ?? 12;
         const blockData = globalStore.get(this.blockAtom);
         const overrideFontSize = blockData?.meta?.["editor:fontsize"];
         const menuItems: ContextMenuItem[] = [];
@@ -717,68 +735,72 @@ export class PreviewModel implements ViewModel {
                 }),
         });
         menuItems.push({ type: "separator" });
-        const fontSizeSubMenu: ContextMenuItem[] = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map(
-            (fontSize: number) => {
-                return {
-                    label: fontSize.toString() + "px",
-                    type: "checkbox",
-                    checked: overrideFontSize == fontSize,
-                    click: () => {
-                        RpcApi.SetMetaCommand(TabRpcClient, {
-                            oref: WOS.makeORef("block", this.blockId),
-                            meta: { "editor:fontsize": fontSize },
-                        });
-                    },
-                };
-            }
-        );
-        fontSizeSubMenu.unshift({
-            label: "Default (" + defaultFontSize + "px)",
-            type: "checkbox",
-            checked: overrideFontSize == null,
-            click: () => {
-                RpcApi.SetMetaCommand(TabRpcClient, {
-                    oref: WOS.makeORef("block", this.blockId),
-                    meta: { "editor:fontsize": null },
-                });
-            },
-        });
-        menuItems.push({
-            label: "Editor Font Size",
-            submenu: fontSizeSubMenu,
-        });
         const finfo = jotaiLoadableValue(globalStore.get(this.loadableFileInfo), null);
         addOpenMenuItems(menuItems, globalStore.get(this.connectionImmediate), finfo);
         const loadableSV = globalStore.get(this.loadableSpecializedView);
         const wordWrapAtom = getOverrideConfigAtom(this.blockId, "editor:wordwrap");
         const wordWrap = globalStore.get(wordWrapAtom) ?? false;
-        if (loadableSV.state == "hasData") {
-            if (loadableSV.data.specializedView == "codeedit") {
-                if (globalStore.get(this.newFileContent) != null) {
-                    menuItems.push({ type: "separator" });
-                    menuItems.push({
-                        label: "Save File",
-                        click: () => fireAndForget(this.handleFileSave.bind(this)),
-                    });
-                    menuItems.push({
-                        label: "Revert File",
-                        click: () => fireAndForget(this.handleFileRevert.bind(this)),
-                    });
+        menuItems.push({ type: "separator" });
+        if (loadableSV.state == "hasData" && loadableSV.data.specializedView == "codeedit") {
+            const fontSizeSubMenu: ContextMenuItem[] = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map(
+                (fontSize: number) => {
+                    return {
+                        label: fontSize.toString() + "px",
+                        type: "checkbox",
+                        checked: overrideFontSize == fontSize,
+                        click: () => {
+                            this.env.rpc.SetMetaCommand(TabRpcClient, {
+                                oref: WOS.makeORef("block", this.blockId),
+                                meta: { "editor:fontsize": fontSize },
+                            });
+                        },
+                    };
                 }
+            );
+            fontSizeSubMenu.unshift({
+                label: "Default (" + defaultFontSize + "px)",
+                type: "checkbox",
+                checked: overrideFontSize == null,
+                click: () => {
+                    this.env.rpc.SetMetaCommand(TabRpcClient, {
+                        oref: WOS.makeORef("block", this.blockId),
+                        meta: { "editor:fontsize": null },
+                    });
+                },
+            });
+            menuItems.push({
+                label: "Editor Font Size",
+                submenu: fontSizeSubMenu,
+            });
+            if (globalStore.get(this.newFileContent) != null) {
                 menuItems.push({ type: "separator" });
                 menuItems.push({
-                    label: "Word Wrap",
-                    type: "checkbox",
-                    checked: wordWrap,
-                    click: () =>
-                        fireAndForget(async () => {
-                            const blockOref = WOS.makeORef("block", this.blockId);
-                            await services.ObjectService.UpdateObjectMeta(blockOref, {
-                                "editor:wordwrap": !wordWrap,
-                            });
-                        }),
+                    label: "Save File",
+                    click: () => fireAndForget(this.handleFileSave.bind(this)),
+                });
+                menuItems.push({
+                    label: "Revert File",
+                    click: () => fireAndForget(this.handleFileRevert.bind(this)),
                 });
             }
+            menuItems.push({ type: "separator" });
+            menuItems.push({
+                label: "Word Wrap",
+                type: "checkbox",
+                checked: wordWrap,
+                click: () =>
+                    fireAndForget(async () => {
+                        const blockOref = WOS.makeORef("block", this.blockId);
+                        await this.env.services.object.UpdateObjectMeta(blockOref, {
+                            "editor:wordwrap": !wordWrap,
+                        });
+                    }),
+            });
+        }
+        if (loadableSV.state == "hasData" && loadableSV.data.specializedView == "directory") {
+            menuItems.push({ type: "separator" });
+            menuItems.push({ label: "Default Settings", enabled: false });
+            menuItems.push(...makeDirectoryDefaultMenuItems(this));
         }
         return menuItems;
     }

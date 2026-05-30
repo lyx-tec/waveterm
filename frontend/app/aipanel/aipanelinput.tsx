@@ -24,9 +24,19 @@ export interface AIPanelInputRef {
 export const AIPanelInput = memo(({ onSubmit, status, model }: AIPanelInputProps) => {
     const [input, setInput] = useAtom(model.inputAtom);
     const isFocused = useAtomValue(model.isWaveAIFocusedAtom);
+    const isChatEmpty = useAtomValue(model.isChatEmptyAtom);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const isPanelOpen = useAtomValue(model.getPanelVisibleAtom());
+
+    let placeholder: string;
+    if (!isChatEmpty) {
+        placeholder = "Continue...";
+    } else if (model.inBuilder) {
+        placeholder = "What would you like to build...";
+    } else {
+        placeholder = "Ask Wave AI anything...";
+    }
 
     const resizeTextarea = useCallback(() => {
         const textarea = textareaRef.current;
@@ -141,7 +151,7 @@ export const AIPanelInput = memo(({ onSubmit, status, model }: AIPanelInputProps
                         onKeyDown={handleKeyDown}
                         onFocus={handleFocus}
                         onBlur={handleBlur}
-                        placeholder={model.inBuilder ? "What would you like to build..." : "Ask Wave AI anything..."}
+                        placeholder={placeholder}
                         className={cn(
                             "w-full  text-white px-2 py-2 pr-5 focus:outline-none resize-none overflow-auto bg-zinc-800/50"
                         )}
@@ -159,24 +169,35 @@ export const AIPanelInput = memo(({ onSubmit, status, model }: AIPanelInputProps
                             <i className="fa fa-paperclip text-sm"></i>
                         </button>
                     </Tooltip>
-                    <Tooltip content="Send message (Enter)" placement="top" divClassName="absolute bottom-1.5 right-1">
-                        <button
-                            type="submit"
-                            disabled={status !== "ready" || !input.trim()}
-                            className={cn(
-                                "w-5 h-5 transition-colors flex items-center justify-center",
-                                status !== "ready" || !input.trim()
-                                    ? "text-gray-400"
-                                    : "text-accent/80 hover:text-accent cursor-pointer"
-                            )}
-                        >
-                            {status === "streaming" ? (
-                                <i className="fa fa-spinner fa-spin text-sm"></i>
-                            ) : (
+                    {status === "streaming" ? (
+                        <Tooltip content="Stop Response" placement="top" divClassName="absolute bottom-1.5 right-1">
+                            <button
+                                type="button"
+                                onClick={() => model.stopResponse()}
+                                className={cn(
+                                    "w-5 h-5 transition-colors flex items-center justify-center",
+                                    "text-green-500 hover:text-green-400 cursor-pointer"
+                                )}
+                            >
+                                <i className="fa fa-square text-sm"></i>
+                            </button>
+                        </Tooltip>
+                    ) : (
+                        <Tooltip content="Send message (Enter)" placement="top" divClassName="absolute bottom-1.5 right-1">
+                            <button
+                                type="submit"
+                                disabled={status !== "ready" || !input.trim()}
+                                className={cn(
+                                    "w-5 h-5 transition-colors flex items-center justify-center",
+                                    status !== "ready" || !input.trim()
+                                        ? "text-gray-400"
+                                        : "text-accent/80 hover:text-accent cursor-pointer"
+                                )}
+                            >
                                 <i className="fa fa-paper-plane text-sm"></i>
-                            )}
-                        </button>
-                    </Tooltip>
+                            </button>
+                        </Tooltip>
+                    )}
                 </div>
             </form>
         </div>
