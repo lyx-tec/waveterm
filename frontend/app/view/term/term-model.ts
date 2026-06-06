@@ -6,6 +6,7 @@ import { BlockNodeModel } from "@/app/block/blocktypes";
 import { appHandleKeyDown } from "@/app/store/keymodel";
 import { modalsModel } from "@/app/store/modalmodel";
 import type { TabModel } from "@/app/store/tab-model";
+import { createElement } from "react";
 import { waveEventSubscribeSingle } from "@/app/store/wps";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { makeFeBlockRouteId } from "@/app/store/wshrouter";
@@ -200,12 +201,30 @@ export class TermViewModel implements ViewModel {
             const blockMeta = get(this.blockAtom)?.meta;
             const lasterror = blockMeta?.["cmd:lasterror"];
             if (lasterror) {
+                const cmdStr = blockMeta?.["cmd"] || "";
                 rtn.push({
                     elemtype: "iconbutton",
                     icon: "circle-exclamation",
                     iconColor: "var(--error-color)",
                     title: "Command failed: " + lasterror,
-                    noAction: true,
+                    click: () => {
+                        const cmdDisplay = cmdStr || "(none)";
+                        modalsModel.pushModal("MessageModal", {
+                            children: createElement("div", null,
+                                createElement("p", null,
+                                    createElement("strong", null, "Command: "),
+                                    cmdDisplay,
+                                ),
+                                createElement("p", null,
+                                    createElement("strong", null, "Error: "),
+                                    lasterror,
+                                ),
+                                createElement("p", { className: "text-tertiary text-[11px] mt-2" },
+                                    "Block: " + this.blockId,
+                                ),
+                            ),
+                        });
+                    },
                 });
             }
             const isMI = get(this.tabModel.isTermMultiInput);

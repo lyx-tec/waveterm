@@ -59,13 +59,14 @@ const CommandConfigModal = (props: CommandConfigModalProps) => {
         }
         setValidationError(null);
         setSaveDisabled(true);
-        const meta: Record<string, any> = {
-            "cmd": command || null,
-            "cmd:runonstart": !!runOnStart,
-            "cmd:clearonstart": !!clearOnStart,
-            "cmd:env": parsed.map,
-            "cmd:lasterror": null,
-        };
+    const meta: Record<string, any> = {
+        "cmd": command || null,
+        "cmd:runonstart": !!runOnStart,
+        "cmd:clearonstart": !!clearOnStart,
+        "cmd:env": parsed.map,
+        "cmd:lasterror": null,
+        "controller": "shell",
+    };
         fireAndForget(async () => {
             try {
                 await RpcApi.SetMetaCommand(TabRpcClient, {
