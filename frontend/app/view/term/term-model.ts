@@ -197,6 +197,17 @@ export class TermViewModel implements ViewModel {
                     }
                 }
             }
+            const blockMeta = get(this.blockAtom)?.meta;
+            const lasterror = blockMeta?.["cmd:lasterror"];
+            if (lasterror) {
+                rtn.push({
+                    elemtype: "iconbutton",
+                    icon: "circle-exclamation",
+                    iconColor: "var(--error-color)",
+                    title: "Command failed: " + lasterror,
+                    noAction: true,
+                });
+            }
             const isMI = get(this.tabModel.isTermMultiInput);
             if (isMI && this.isBasicTerm(get)) {
                 rtn.push({
@@ -1262,33 +1273,11 @@ export class TermViewModel implements ViewModel {
                 },
             ],
         });
-        const runOnStart = blockData?.meta?.["cmd:runonstart"];
         advancedSubmenu.push({
-            label: "Run On Startup",
-            submenu: [
-                {
-                    label: "On",
-                    type: "checkbox",
-                    checked: runOnStart,
-                    click: () => {
-                        RpcApi.SetMetaCommand(TabRpcClient, {
-                            oref: WOS.makeORef("block", this.blockId),
-                            meta: { "cmd:runonstart": true },
-                        });
-                    },
-                },
-                {
-                    label: "Off",
-                    type: "checkbox",
-                    checked: !runOnStart,
-                    click: () => {
-                        RpcApi.SetMetaCommand(TabRpcClient, {
-                            oref: WOS.makeORef("block", this.blockId),
-                            meta: { "cmd:runonstart": false },
-                        });
-                    },
-                },
-            ],
+            label: "Configure Command...",
+            click: () => {
+                modalsModel.pushModal("CommandConfigModal", { blockId: this.blockId });
+            },
         });
         const debugConn = blockData?.meta?.["term:conndebug"];
         advancedSubmenu.push({

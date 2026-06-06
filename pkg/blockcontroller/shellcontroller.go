@@ -526,6 +526,14 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 	shellInputCh := make(chan *BlockInputUnion, 32)
 	bc.ShellInputCh = shellInputCh
 
+	if bc.ControllerType == BlockController_Shell {
+		cmdStr := blockMeta.GetString(waveobj.MetaKey_Cmd, "")
+		if cmdStr != "" {
+			fullCmd := cmdStr + "\r\n"
+			shellProc.Cmd.Write([]byte(fullCmd))
+		}
+	}
+
 	go func() {
 		// handles regular output from the pty (goes to the blockfile and xterm)
 		defer func() {
@@ -617,6 +625,27 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 		}
 		bc.writeMutedMessageToTerminal("[" + msg + "]")
 		go checkCloseOnExit(bc.BlockId, exitCode)
+		blockData := bc.getBlockData_noErr()
+		if blockData != nil {
+			cmdStr := blockData.Meta.GetString(waveobj.MetaKey_Cmd, "")
+			if cmdStr != "" {
+				ctx, cancelFn := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancelFn()
+				var err error
+				if exitCode != 0 {
+					err = wstore.UpdateObjectMeta(ctx, waveobj.MakeORef(waveobj.OType_Block, bc.BlockId), map[string]any{
+						waveobj.MetaKey_CmdLastError: fmt.Sprintf("exit code %d", exitCode),
+					}, false)
+				} else {
+					err = wstore.UpdateObjectMeta(ctx, waveobj.MakeORef(waveobj.OType_Block, bc.BlockId), map[string]any{
+						waveobj.MetaKey_CmdLastError: "",
+					}, false)
+				}
+				if err != nil {
+					log.Printf("error updating cmd:lasterror meta: %v\n", err)
+				}
+			}
+		}
 	}()
 	return nil
 }

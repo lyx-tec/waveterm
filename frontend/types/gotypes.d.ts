@@ -1126,6 +1126,7 @@ declare global {
         "cmd:allowconnchange"?: boolean;
         "cmd:jwt"?: boolean;
         "cmd:env"?: {[key: string]: string};
+        "cmd:lasterror"?: string;
         "cmd:cwd"?: string;
         "cmd:initscript"?: string;
         "cmd:initscript.sh"?: string;
