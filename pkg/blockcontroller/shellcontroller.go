@@ -65,8 +65,7 @@ type ShellController struct {
 	// for shell/cmd
 	ShellProc       *shellexec.ShellProc
 	ShellInputCh    chan *BlockInputUnion
-	ShellType       string
-	InjectedCommand *atomic.Bool
+	ShellType string
 }
 
 // Constructor that returns the Controller interface
@@ -78,8 +77,7 @@ func MakeShellController(tabId string, blockId string, controllerType string, co
 		BlockId:        blockId,
 		ConnName:       connName,
 		ProcStatus:     Status_Init,
-		RunLock:         &atomic.Bool{},
-		InjectedCommand: &atomic.Bool{},
+		RunLock: &atomic.Bool{},
 	}
 }
 
@@ -393,11 +391,6 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 	if bcInitStatus.ShellProcStatus == Status_Running {
 		return nil, nil
 	}
-	clearCtx, clearCancelFn := context.WithTimeout(context.Background(), 2*time.Second)
-	wstore.UpdateObjectMeta(clearCtx, waveobj.MakeORef(waveobj.OType_Block, bc.BlockId), map[string]any{
-		waveobj.MetaKey_CmdLastError: nil,
-	}, false)
-	clearCancelFn()
 	// TODO better sync here (don't let two starts happen at the same times)
 	remoteName := blockMeta.GetString(waveobj.MetaKey_Connection, "")
 	connUnion, err := bc.getConnUnion(logCtx, remoteName, blockMeta)
@@ -538,11 +531,6 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 	if bc.ControllerType == BlockController_Shell {
 		cmdStr := blockMeta.GetString(waveobj.MetaKey_Cmd, "")
 		if cmdStr != "" {
-			clearCtx, clearCancelFn := context.WithTimeout(context.Background(), 2*time.Second)
-			wstore.UpdateObjectMeta(clearCtx, waveobj.MakeORef(waveobj.OType_Block, bc.BlockId), map[string]any{
-				waveobj.MetaKey_CmdLastError: nil,
-			}, false)
-			clearCancelFn()
 			envMap := blockMeta.GetStringMap(waveobj.MetaKey_CmdEnv, true)
 			var prefix strings.Builder
 			for k, v := range envMap {
@@ -562,8 +550,7 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 			time.Sleep(1500 * time.Millisecond)
 			injectCmd := strings.ReplaceAll(cmdStr, "\n", "\r")
 			fullCmd := prefix.String() + injectCmd + "\r"
-			shellProc.Cmd.Write([]byte(fullCmd))
-			bc.InjectedCommand.Store(true)
+			shellInputCh <- &BlockInputUnion{InputData: []byte(fullCmd)}
 		}
 	}
 
@@ -658,27 +645,6 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 		}
 		bc.writeMutedMessageToTerminal("[" + msg + "]")
 		go checkCloseOnExit(bc.BlockId, exitCode)
-		blockData := bc.getBlockData_noErr()
-		if blockData != nil && bc.InjectedCommand.Load() {
-			cmdStr := blockData.Meta.GetString(waveobj.MetaKey_Cmd, "")
-			if cmdStr != "" {
-				ctx, cancelFn := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancelFn()
-				var err error
-				if exitCode != 0 {
-					err = wstore.UpdateObjectMeta(ctx, waveobj.MakeORef(waveobj.OType_Block, bc.BlockId), map[string]any{
-						waveobj.MetaKey_CmdLastError: fmt.Sprintf("exit code %d", exitCode),
-					}, false)
-				} else {
-					err = wstore.UpdateObjectMeta(ctx, waveobj.MakeORef(waveobj.OType_Block, bc.BlockId), map[string]any{
-						waveobj.MetaKey_CmdLastError: "",
-					}, false)
-				}
-				if err != nil {
-					log.Printf("error updating cmd:lasterror meta: %v\n", err)
-				}
-			}
-		}
 	}()
 	return nil
 }

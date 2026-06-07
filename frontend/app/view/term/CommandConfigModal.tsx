@@ -5,7 +5,7 @@ import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { WOS, atoms, globalStore } from "@/store/global";
 import * as keyutil from "@/util/keyutil";
 import { fireAndForget } from "@/util/util";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import "./CommandConfigModal.scss";
 
@@ -64,7 +64,6 @@ const CommandConfigModal = (props: CommandConfigModalProps) => {
         "cmd:runonstart": !!runOnStart,
         "cmd:clearonstart": !!clearOnStart,
         "cmd:env": parsed.map,
-        "cmd:lasterror": null,
         "controller": "shell",
     };
         fireAndForget(async () => {
@@ -111,7 +110,7 @@ const CommandConfigModal = (props: CommandConfigModalProps) => {
             cancelLabel="Cancel"
             okDisabled={saveDisabled}
         >
-            <div className="font-bold text-primary mx-4 pb-2.5">Configure Command</div>
+            <div className="font-bold text-primary mx-4 pb-2.5">Startup Command</div>
             <div className="flex flex-col gap-4 mx-4 mb-4 min-w-[450px] text-primary">
                 <div className="flex flex-col gap-1.5">
                     <label className="text-sm font-medium">Command</label>

@@ -54,7 +54,6 @@ const (
 	MetaKey_CmdAllowConnChange               = "cmd:allowconnchange"
 	MetaKey_CmdJwt                           = "cmd:jwt"
 	MetaKey_CmdEnv                           = "cmd:env"
-	MetaKey_CmdLastError                     = "cmd:lasterror"
 	MetaKey_CmdCwd                           = "cmd:cwd"
 	MetaKey_CmdInitScript                    = "cmd:initscript"
 	MetaKey_CmdInitScriptSh                  = "cmd:initscript.sh"
