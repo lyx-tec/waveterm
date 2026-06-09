@@ -77,6 +77,10 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 	if dbDaemon.JobId != "" {
 		status, err := jobcontroller.GetJobManagerStatus(ctx, dbDaemon.JobId)
 		if err == nil && status == jobcontroller.JobManagerStatus_Running {
+			err = jobcontroller.ReconnectJob(ctx, dbDaemon.JobId, rtOpts)
+			if err != nil {
+				return fmt.Errorf("error reconnecting to existing job %q: %w", dbDaemon.JobId, err)
+			}
 			sdc.WithLock(func() {
 				sdc.incrementVersion()
 				sdc.sendControllerStatus()
@@ -103,6 +107,11 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 	err = daemon.SetJobId(ctx, dbDaemon, jobId)
 	if err != nil {
 		return fmt.Errorf("failed to set job id on daemon: %w", err)
+	}
+
+	err = jobcontroller.ReconnectJob(ctx, jobId, rtOpts)
+	if err != nil {
+		return fmt.Errorf("error reconnecting to new job %q: %w", jobId, err)
 	}
 
 	sdc.WithLock(func() {

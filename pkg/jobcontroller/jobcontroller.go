@@ -791,7 +791,21 @@ func doWFSAppend(ctx context.Context, oref waveobj.ORef, fileName string, data [
 }
 
 func handleAppendJobFile(ctx context.Context, jobId string, fileName string, data []byte) error {
-	return doWFSAppend(ctx, waveobj.MakeORef(waveobj.OType_Job, jobId), fileName, data)
+	err := doWFSAppend(ctx, waveobj.MakeORef(waveobj.OType_Job, jobId), fileName, data)
+	if err != nil {
+		return fmt.Errorf("error appending to job file: %w", err)
+	}
+	job, err := wstore.DBGet[*waveobj.Job](ctx, jobId)
+	if err != nil {
+		return fmt.Errorf("error getting job: %w", err)
+	}
+	if job != nil && job.AttachedBlockId != "" {
+		err = doWFSAppend(ctx, waveobj.MakeORef(waveobj.OType_Block, job.AttachedBlockId), fileName, data)
+		if err != nil {
+			return fmt.Errorf("error appending to block file: %w", err)
+		}
+	}
+	return nil
 }
 
 func runOutputLoop(ctx context.Context, jobId string, streamId string, reader *streamclient.Reader) {
