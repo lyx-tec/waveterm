@@ -109,11 +109,6 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 		return fmt.Errorf("failed to set job id on daemon: %w", err)
 	}
 
-	err = jobcontroller.ReconnectJob(ctx, jobId, rtOpts)
-	if err != nil {
-		return fmt.Errorf("error reconnecting to new job %q: %w", jobId, err)
-	}
-
 	sdc.WithLock(func() {
 		sdc.incrementVersion()
 		sdc.sendControllerStatus()
