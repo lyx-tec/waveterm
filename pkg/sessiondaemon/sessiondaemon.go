@@ -89,6 +89,7 @@ func (sd *SessionDaemon) Stop(ctx context.Context) {
 	sd.Lock.Lock()
 	jobId := sd.JobId
 	sd.Lock.Unlock()
+	log.Printf("[sessiondaemon] stop daemon=%s job=%s", sd.DaemonId, jobId)
 	if jobId != "" {
 		jobcontroller.TerminateAndDetachJob(ctx, jobId)
 	}
@@ -123,6 +124,7 @@ func (sd *SessionDaemonManager) GetOrCreate(ctx context.Context, dbDaemon *waveo
 	defer sd.Lock.Unlock()
 
 	if existing, ok := sd.Daemons[dbDaemon.OID]; ok {
+		log.Printf("[sessiondaemon] GetOrCreate: found existing daemon=%s job=%s", dbDaemon.OID, dbDaemon.JobId)
 		existing.Lock.Lock()
 		if existing.JobId == "" {
 			existing.JobId = dbDaemon.JobId
@@ -131,6 +133,7 @@ func (sd *SessionDaemonManager) GetOrCreate(ctx context.Context, dbDaemon *waveo
 		return existing, nil
 	}
 
+	log.Printf("[sessiondaemon] GetOrCreate: creating new daemon=%s name=%q", dbDaemon.OID, dbDaemon.Name)
 	daemon := &SessionDaemon{
 		DaemonId:       dbDaemon.OID,
 		Name:           dbDaemon.Name,
@@ -155,6 +158,7 @@ func (sd *SessionDaemonManager) Remove(daemonId string) {
 }
 
 func (sd *SessionDaemonManager) AttachBlock(ctx context.Context, daemonId string, blockId string) {
+	log.Printf("[sessiondaemon] AttachBlock: daemon=%s block=%s", daemonId, blockId)
 	sd.Lock.Lock()
 	daemon, ok := sd.Daemons[daemonId]
 	if !ok {
@@ -171,6 +175,7 @@ func (sd *SessionDaemonManager) AttachBlock(ctx context.Context, daemonId string
 }
 
 func (sd *SessionDaemonManager) DetachBlock(ctx context.Context, daemonId string, blockId string) {
+	log.Printf("[sessiondaemon] DetachBlock: daemon=%s block=%s", daemonId, blockId)
 	sd.Lock.Lock()
 	daemon, ok := sd.Daemons[daemonId]
 	if !ok {
