@@ -198,6 +198,23 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 		daemonId = newDaemonId
 	}
 
+	// Validate existing daemon: if stale (done/not found), clear and auto-create
+	if daemonId != "" && controllerName == BlockController_Shell {
+		dbDaemon, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, daemonId)
+		if err != nil || dbDaemon.Status == "done" {
+			log.Printf("[sessiondaemon] stale daemon=%s block=%s status=%s err=%v, clearing and recreating", daemonId, blockId, func() string { if dbDaemon != nil { return dbDaemon.Status }; return "db_load_error" }(), err)
+			_ = wstore.DBUpdateFn(ctx, blockId, func(block *waveobj.Block) {
+				delete(block.Meta, waveobj.MetaKey_SessionDaemonId)
+			})
+			daemonId = ""
+			newDaemonId, err := autoCreateSessionDaemon(ctx, blockId, blockData.Meta, connName, rtOpts)
+			if err != nil {
+				return fmt.Errorf("auto-create session daemon after stale cleanup: %w", err)
+			}
+			daemonId = newDaemonId
+		}
+	}
+
 	// Check if we need to morph controller type
 	if existing != nil {
 		needsReplace := false

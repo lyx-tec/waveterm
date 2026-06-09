@@ -51,15 +51,18 @@ const TermResyncHandler = React.memo(({ blockId, model }: TerminalViewProps) => 
 
     React.useEffect(() => {
         if (!model.termRef.current?.hasResized) {
+            console.log("[TermResyncHandler] hasResized=false, skipping resync", blockId);
             return;
         }
         const isConnected = connStatus?.status == "connected";
         const wasConnected = lastConnStatus?.status == "connected";
         const curConnName = connStatus?.connection;
         const lastConnName = lastConnStatus?.connection;
+        console.log("[TermResyncHandler] check", blockId, "cur:", connStatus?.status, "last:", lastConnStatus?.status, "conn:", curConnName);
         if (isConnected == wasConnected && curConnName == lastConnName) {
             return;
         }
+        console.log("[TermResyncHandler] triggering resync", blockId);
         model.termRef.current?.resyncController("resync handler");
         setLastConnStatus(connStatus);
     }, [connStatus]);

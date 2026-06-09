@@ -431,6 +431,7 @@ export class TermWrap {
 
         this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
         this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
+        console.log("[termwrap] initTerminal: zoneId=", this.getZoneId(), "blockId=", this.blockId);
 
         try {
             const rtInfo = await RpcApi.GetRTInfoCommand(TabRpcClient, {
@@ -573,7 +574,7 @@ export class TermWrap {
     }
 
     async resyncController(reason: string) {
-        dlog("resync controller", this.blockId, reason);
+        console.log("[termwrap] resync controller", this.blockId, reason);
         const rtOpts: RuntimeOpts = { termsize: { rows: this.terminal.rows, cols: this.terminal.cols } };
         try {
             await RpcApi.ControllerResyncCommand(TabRpcClient, {
