@@ -358,6 +358,32 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
     }, [termMode]);
 
     React.useEffect(() => {
+        const termWrap = model.termRef.current;
+        const daemonId = blockData?.meta?.["session:daemonid"];
+        if (termWrap == null) {
+            return;
+        }
+        if (!daemonId) {
+            fireAndForget(termWrap.detachFromDaemon.bind(termWrap));
+            return undefined;
+        }
+        let cancelled = false;
+        fireAndForget(async () => {
+            try {
+                const info = await RpcApi.SessionInfoCommand(TabRpcClient, { daemonid: daemonId });
+                if (!cancelled && info.jobid) {
+                    await termWrap.attachToDaemon(info.jobid);
+                }
+            } catch (e) {
+                console.log("error attaching terminal to session daemon", daemonId, e);
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [blockData?.meta?.["session:daemonid"], blockData?.jobid, termWrapInst]);
+
+    React.useEffect(() => {
         if (isMI && isBasicTerm && isFocused && model.termRef.current != null) {
             model.termRef.current.multiInputCallback = (data: string) => {
                 model.multiInputHandler(data);

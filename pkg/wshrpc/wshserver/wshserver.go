@@ -1651,19 +1651,26 @@ func (ws *WshServer) SessionListCommand(ctx context.Context, data wshrpc.Command
 }
 
 func (ws *WshServer) SessionAttachCommand(ctx context.Context, data wshrpc.CommandSessionAttachData) error {
-	_, err := wstore.DBGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
+	dbDaemon, err := wstore.DBGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
 	if err != nil {
 		return fmt.Errorf("session daemon %q not found: %w", data.DaemonId, err)
+	}
+
+	_, err = sessiondaemon.Manager.GetOrCreate(ctx, dbDaemon)
+	if err != nil {
+		return fmt.Errorf("create session daemon in manager: %w", err)
 	}
 
 	sessiondaemon.Manager.AttachBlock(ctx, data.DaemonId, data.BlockId)
 
 	err = wstore.DBUpdateFn(ctx, data.BlockId, func(block *waveobj.Block) {
 		block.Meta[waveobj.MetaKey_SessionDaemonId] = data.DaemonId
+		block.JobId = dbDaemon.JobId
 	})
 	if err != nil {
 		return fmt.Errorf("update block meta: %w", err)
 	}
+	resyncBlockController(ctx, data.BlockId)
 	return nil
 }
 

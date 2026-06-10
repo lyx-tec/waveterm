@@ -88,10 +88,8 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 				return fmt.Errorf("error reconnecting to existing job %q: %w", dbDaemon.JobId, err)
 			}
 			log.Printf("[sessiondaemon] start: reconnect ok job=%s", dbDaemon.JobId)
-			sdc.WithLock(func() {
-				sdc.incrementVersion()
-				sdc.sendControllerStatus()
-			})
+			sdc.incrementVersion()
+			sdc.sendControllerStatus()
 			return nil
 		}
 	}
@@ -122,10 +120,8 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 	}
 
 	log.Printf("[sessiondaemon] start: done block=%s daemon=%s job=%s", sdc.BlockId, sdc.DaemonId, jobId)
-	sdc.WithLock(func() {
-		sdc.incrementVersion()
-		sdc.sendControllerStatus()
-	})
+	sdc.incrementVersion()
+	sdc.sendControllerStatus()
 	return nil
 }
 

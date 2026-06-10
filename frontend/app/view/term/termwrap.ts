@@ -331,22 +331,35 @@ export class TermWrap {
     }
 
     async attachToDaemon(jobId: string): Promise<void> {
+        if (this.zoneId === jobId) {
+            return;
+        }
         if (this.mainFileSubject) {
             this.mainFileSubject.release();
         }
+        this.terminal.clear();
+        this.ptyOffset = 0;
+        this.heldData = [];
         this.zoneId = jobId;
         this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
         this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
         await this.loadInitialTerminalData();
     }
 
-    detachFromDaemon(): void {
+    async detachFromDaemon(): Promise<void> {
+        if (this.zoneId === this.blockId) {
+            return;
+        }
         if (this.mainFileSubject) {
             this.mainFileSubject.release();
         }
+        this.terminal.clear();
+        this.ptyOffset = 0;
+        this.heldData = [];
         this.zoneId = this.blockId;
         this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
         this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
+        await this.loadInitialTerminalData();
     }
 
     setCursorStyle(cursorStyle: string) {

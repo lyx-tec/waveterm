@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	DefaultAnonymousIdleTimeout = 3600    // 1h
-	DefaultNamedIdleTimeout     = 86400   // 24h
-	IdleCheckInterval           = 60      // 检查间隔（秒）
+	DefaultAnonymousIdleTimeout = 3600  // 1h
+	DefaultNamedIdleTimeout     = 86400 // 24h
+	IdleCheckInterval           = 60    // 检查间隔（秒）
 )
 
 type SessionDaemon struct {
@@ -102,8 +102,8 @@ func (sd *SessionDaemon) SendInput(ctx context.Context, inputData []byte, sigNam
 		sd.Lock.Unlock()
 		return fmt.Errorf("no job attached")
 	}
-	inputSessionId, seqNum := sd.InputSessionId, sd.SeqNum
 	sd.SeqNum++
+	inputSessionId, seqNum := sd.InputSessionId, sd.SeqNum
 	sd.Lock.Unlock()
 
 	data := wshrpc.CommandJobInputData{
