@@ -5,6 +5,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { useWaveEnv } from "@/app/waveenv/waveenv";
 import { fireAndForget } from "@/util/util";
+import { autoUpdate, flip, FloatingPortal, offset, shift, useFloating } from "@floating-ui/react";
 import * as jotai from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { BlockEnv } from "./blockenv";
@@ -24,15 +25,72 @@ interface SessionDaemonIndicatorProps {
     useTermHeader: boolean;
 }
 
+const popupStyle = {
+    zIndex: 100,
+    width: "min(420px, calc(100vw - 24px))",
+    maxHeight: 360,
+    overflowY: "auto",
+    background: "color-mix(in srgb, var(--bg-secondary, #1e1e2e) 96%, black)",
+    border: "1px solid color-mix(in srgb, var(--border-primary, #45475a) 78%, transparent)",
+    borderRadius: 10,
+    padding: 8,
+    boxShadow: "0 18px 42px rgba(0,0,0,0.42), 0 2px 8px rgba(0,0,0,0.28)",
+} as const;
+
+const truncateStyle = {
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+} as const;
+
+function SessionStatusPill({ status }: { status: string }) {
+    const isRunning = status === "running";
+    return (
+        <span
+            style={{
+                flexShrink: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                height: 20,
+                padding: "0 8px",
+                borderRadius: 999,
+                fontSize: 11,
+                lineHeight: "20px",
+                color: isRunning ? "#4ade80" : "var(--text-muted)",
+                background: isRunning ? "rgba(74, 222, 128, 0.12)" : "rgba(148, 163, 184, 0.10)",
+                border: `1px solid ${isRunning ? "rgba(74, 222, 128, 0.22)" : "rgba(148, 163, 184, 0.14)"}`,
+            }}
+        >
+            <span
+                style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 999,
+                    background: isRunning ? "#4ade80" : "var(--text-muted)",
+                    boxShadow: isRunning ? "0 0 8px rgba(74, 222, 128, 0.7)" : "none",
+                }}
+            />
+            {status || "unknown"}
+        </span>
+    );
+}
+
 export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemonIndicatorProps) {
     const waveEnv = useWaveEnv<BlockEnv>();
-    const daemonId = jotai.useAtomValue(
-        waveEnv.getBlockMetaKeyAtom(blockId, "session:daemonid")
-    );
+    const daemonId = jotai.useAtomValue(waveEnv.getBlockMetaKeyAtom(blockId, "session:daemonid"));
     const [showPopup, setShowPopup] = useState(false);
     const [sessions, setSessions] = useState<SessionInfo[]>([]);
     const popupRef = useRef<HTMLDivElement>(null);
     const iconRef = useRef<HTMLDivElement>(null);
+    const { refs, floatingStyles } = useFloating({
+        open: showPopup,
+        onOpenChange: setShowPopup,
+        placement: "bottom-end",
+        middleware: [offset(6), flip(), shift({ padding: 12 })],
+        whileElementsMounted: autoUpdate,
+    });
 
     useEffect(() => {
         if (!showPopup) return;
@@ -83,9 +141,12 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
     }
 
     return (
-        <div style={{ position: "relative" }}>
+        <>
             <div
-                ref={iconRef}
+                ref={(elem) => {
+                    iconRef.current = elem;
+                    refs.setReference(elem);
+                }}
                 className="iconbutton text-[13px] ml-[-4px]"
                 title={daemonId ? `Session: ${daemonId}` : "Attach to Session"}
                 onClick={() => setShowPopup((v) => !v)}
@@ -93,79 +154,149 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                 <i className={`fa-sharp fa-solid ${daemonId ? "fa-link text-sky-500" : "fa-link-slash text-muted"}`} />
             </div>
             {showPopup && (
-                <div
-                    ref={popupRef}
-                    style={{
-                        position: "absolute",
-                        top: "100%",
-                        left: 0,
-                        zIndex: 100,
-                        minWidth: 300,
-                        maxHeight: 300,
-                        overflowY: "auto",
-                        background: "var(--bg-secondary, #1e1e2e)",
-                        border: "1px solid var(--border-primary, #45475a)",
-                        borderRadius: 6,
-                        padding: 8,
-                        boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-                    }}
-                >
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, padding: "0 4px" }}>
-                        Sessions ({sessions.length})
-                    </div>
-                    {sessions.length === 0 && (
-                        <div style={{ fontSize: 12, color: "var(--text-muted)", padding: 8 }}>loading...</div>
-                    )}
-                    {sessions.map((s) => (
+                <FloatingPortal>
+                    <div
+                        ref={(elem) => {
+                            popupRef.current = elem;
+                            refs.setFloating(elem);
+                        }}
+                        style={{ ...popupStyle, ...floatingStyles }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onFocusCapture={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                    >
                         <div
-                            key={s.daemonid}
-                            onClick={() => handleAttach(s.daemonid)}
                             style={{
-                                padding: "6px 8px",
-                                cursor: s.daemonid === daemonId ? "default" : "pointer",
-                                borderRadius: 4,
-                                fontSize: 13,
-                                background:
-                                    s.daemonid === daemonId ? "var(--bg-active, rgba(255,255,255,0.06))" : "transparent",
-                                opacity: s.daemonid === daemonId ? 0.7 : 1,
-                            }}
-                            onMouseEnter={(e) => {
-                                if (s.daemonid !== daemonId) {
-                                    (e.currentTarget as HTMLElement).style.background =
-                                        "var(--bg-hover, rgba(255,255,255,0.04))";
-                                }
-                            }}
-                            onMouseLeave={(e) => {
-                                if (s.daemonid !== daemonId) {
-                                    (e.currentTarget as HTMLElement).style.background = "transparent";
-                                }
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                padding: "4px 6px 8px",
+                                borderBottom: "1px solid rgba(148, 163, 184, 0.12)",
+                                marginBottom: 4,
                             }}
                         >
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                <span style={{ fontWeight: s.daemonid === daemonId ? 600 : 400 }}>
-                                    {s.name || `(${s.connection})`}
-                                    {s.daemonid === daemonId && " ✓"}
+                            <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+                                <i className="fa-sharp fa-solid fa-link" style={{ color: "#38bdf8", fontSize: 12 }} />
+                                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
+                                    Sessions
                                 </span>
-                                <span
+                            </div>
+                            <span
+                                style={{
+                                    flexShrink: 0,
+                                    fontSize: 11,
+                                    color: "var(--text-muted)",
+                                    background: "rgba(148, 163, 184, 0.10)",
+                                    border: "1px solid rgba(148, 163, 184, 0.12)",
+                                    borderRadius: 999,
+                                    padding: "1px 7px",
+                                }}
+                            >
+                                {sessions.length}
+                            </span>
+                        </div>
+                        {sessions.length === 0 && (
+                            <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "14px 10px" }}>
+                                Loading sessions...
+                            </div>
+                        )}
+                        {sessions.map((s) => {
+                            const isActive = s.daemonid === daemonId;
+                            const blockCount = s.blocks?.length ?? 0;
+                            return (
+                                <div
+                                    key={s.daemonid}
+                                    onClick={() => handleAttach(s.daemonid)}
+                                    title={`${s.name || s.connection} · ${s.status}`}
                                     style={{
-                                        fontSize: 11,
-                                        padding: "1px 6px",
-                                        borderRadius: 3,
-                                        background:
-                                            s.status === "running" ? "rgba(56,178,127,0.2)" : "rgba(100,100,100,0.2)",
-                                        color: s.status === "running" ? "#38b27f" : "var(--text-muted)",
+                                        display: "grid",
+                                        gridTemplateColumns: "minmax(0, 1fr) auto",
+                                        gap: 10,
+                                        padding: "9px 10px",
+                                        marginTop: 4,
+                                        cursor: isActive ? "default" : "pointer",
+                                        borderRadius: 8,
+                                        fontSize: 13,
+                                        background: isActive ? "rgba(56, 189, 248, 0.12)" : "transparent",
+                                        border: isActive
+                                            ? "1px solid rgba(56, 189, 248, 0.24)"
+                                            : "1px solid transparent",
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        if (!isActive) {
+                                            e.currentTarget.style.background = "rgba(148, 163, 184, 0.08)";
+                                        }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        if (!isActive) {
+                                            e.currentTarget.style.background = "transparent";
+                                        }
                                     }}
                                 >
-                                    {s.status}
-                                </span>
-                            </div>
-                            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                                {s.connection} · {s.blocks?.length ?? 0} block(s)
-                            </div>
-                        </div>
-                    ))}
-                </div>
+                                    <div style={{ display: "flex", gap: 9, minWidth: 0 }}>
+                                        <span
+                                            style={{
+                                                width: 28,
+                                                height: 28,
+                                                borderRadius: 7,
+                                                flexShrink: 0,
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                color: isActive ? "#7dd3fc" : "var(--text-muted)",
+                                                background: isActive
+                                                    ? "rgba(56, 189, 248, 0.16)"
+                                                    : "rgba(148, 163, 184, 0.08)",
+                                            }}
+                                        >
+                                            <i
+                                                className={`fa-sharp fa-solid ${s.isanonymous ? "fa-link" : "fa-tag"}`}
+                                            />
+                                        </span>
+                                        <div style={{ minWidth: 0 }}>
+                                            <div
+                                                style={{
+                                                    ...truncateStyle,
+                                                    fontWeight: isActive ? 650 : 500,
+                                                    color: "var(--text-primary)",
+                                                    lineHeight: "18px",
+                                                }}
+                                            >
+                                                {s.name || s.connection || "Unnamed session"}
+                                            </div>
+                                            <div
+                                                style={{
+                                                    ...truncateStyle,
+                                                    fontSize: 11,
+                                                    color: "var(--text-muted)",
+                                                    marginTop: 1,
+                                                }}
+                                            >
+                                                {s.name ? s.connection : s.daemonid.slice(0, 8)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            alignItems: "flex-end",
+                                            gap: 5,
+                                        }}
+                                    >
+                                        <SessionStatusPill status={s.status} />
+                                        <span
+                                            style={{ fontSize: 11, color: isActive ? "#7dd3fc" : "var(--text-muted)" }}
+                                        >
+                                            {isActive ? "Active" : `${blockCount} block${blockCount === 1 ? "" : "s"}`}
+                                        </span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </FloatingPortal>
             )}
-        </div>
+        </>
     );
 }
