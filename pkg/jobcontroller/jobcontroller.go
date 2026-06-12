@@ -30,7 +30,6 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wavejwt"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -761,6 +760,17 @@ func StartJob(ctx context.Context, params StartJobParams) (string, error) {
 		},
 	})
 
+	routeId := wshutil.MakeJobRouteId(jobId)
+	waitCtx, cancelFn := context.WithTimeout(ctx, 5*time.Second)
+	err = wshutil.DefaultRouter.WaitForRegister(waitCtx, routeId)
+	cancelFn()
+	if err != nil {
+		log.Printf("[job:%s] warning: route not established after start: %v", jobId, err)
+	} else {
+		SetJobConnStatus(jobId, JobConnStatus_Connected)
+		log.Printf("[job:%s] route established, job connected", jobId)
+	}
+
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("jobcontroller:runOutputLoop", recover())
@@ -796,7 +806,6 @@ func handleAppendJobFile(ctx context.Context, jobId string, fileName string, dat
 	if err != nil {
 		return fmt.Errorf("error appending to job file: %w", err)
 	}
-
 	job, err := wstore.DBGet[*waveobj.Job](ctx, jobId)
 	if err != nil {
 		return fmt.Errorf("error getting job: %w", err)
@@ -807,7 +816,6 @@ func handleAppendJobFile(ctx context.Context, jobId string, fileName string, dat
 			return fmt.Errorf("error appending to block file: %w", err)
 		}
 	}
-
 	return nil
 }
 
@@ -1345,59 +1353,6 @@ func restartStreaming(ctx context.Context, jobId string, knownConnected bool, rt
 }
 
 // this function must be kept up to date with getBlockTermDurableAtom in frontend/app/store/global.ts
-func IsBlockTermDurable(block *waveobj.Block) bool {
-	if block == nil {
-		return false
-	}
-
-	// Check if view is "term", and controller is "shell"
-	if block.Meta.GetString(waveobj.MetaKey_View, "") != "term" || block.Meta.GetString(waveobj.MetaKey_Controller, "") != "shell" {
-		return false
-	}
-
-	// 1. Check if block has a JobId
-	if block.JobId != "" {
-		return true
-	}
-
-	// 2. Check if connection is local or WSL (not durable)
-	connName := block.Meta.GetString(waveobj.MetaKey_Connection, "")
-	if conncontroller.IsLocalConnName(connName) || conncontroller.IsWslConnName(connName) {
-		return false
-	}
-
-	// 3. Check config hierarchy: blockmeta → connection → global (default true)
-	// Check block meta first
-	if val, exists := block.Meta[waveobj.MetaKey_TermDurable]; exists {
-		if boolVal, ok := val.(bool); ok {
-			return boolVal
-		}
-	}
-	// Check connection config
-	fullConfig := wconfig.GetWatcher().GetFullConfig()
-	if connName != "" {
-		if connConfig, exists := fullConfig.Connections[connName]; exists {
-			if connConfig.TermDurable != nil {
-				return *connConfig.TermDurable
-			}
-		}
-	}
-	// Check global settings
-	if fullConfig.Settings.TermDurable != nil {
-		return *fullConfig.Settings.TermDurable
-	}
-	// Default to true for non-local connections
-	return true
-}
-
-func IsBlockIdTermDurable(blockId string) bool {
-	block, err := wstore.DBGet[*waveobj.Block](context.Background(), blockId)
-	if err != nil || block == nil {
-		return false
-	}
-	return IsBlockTermDurable(block)
-}
-
 func DeleteJob(ctx context.Context, jobId string) error {
 	SetJobConnStatus(jobId, JobConnStatus_Disconnected)
 	jobTerminationMessageWritten.Delete(jobId)

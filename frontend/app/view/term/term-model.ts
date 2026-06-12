@@ -766,7 +766,7 @@ export class TermViewModel implements ViewModel {
             return false;
         }
         const shellProcStatus = globalStore.get(this.shellProcStatus);
-        if ((shellProcStatus == "done" || shellProcStatus == "init") && keyutil.checkKeyPressed(waveEvent, "Enter")) {
+        if (shellProcStatus == "done" && keyutil.checkKeyPressed(waveEvent, "Enter")) {
             fireAndForget(() => this.forceRestartController());
             return false;
         }
@@ -1350,6 +1350,37 @@ export class TermViewModel implements ViewModel {
                         click: () => fireAndForget(() => this.restartSessionWithDurability(true)),
                     },
                 ],
+            });
+        }
+
+        const sessionDaemonId = blockData?.meta?.["session:daemonid"];
+        if (sessionDaemonId) {
+            advancedSubmenu.push({ type: "separator" });
+            advancedSubmenu.push({
+                label: "Session Info",
+                click: () => {
+                    fireAndForget(async () => {
+                        try {
+                            const info = await RpcApi.SessionInfoCommand(TabRpcClient, { daemonid: sessionDaemonId });
+                            const msg = `Session Daemon: ${info.name || "(unnamed)"}\nID: ${info.daemonid}\nStatus: ${info.status}\nConnection: ${info.connection || "N/A"}\nBlocks: ${(info.blocks || []).length}`;
+                            modalsModel.pushModal("MessageModal", { children: msg });
+                        } catch (e) {
+                            modalsModel.pushModal("MessageModal", { children: `Error: ${e?.message || e}` });
+                        }
+                    });
+                },
+            });
+            advancedSubmenu.push({
+                label: "Detach from Session",
+                click: () => {
+                    fireAndForget(async () => {
+                        try {
+                            await RpcApi.SessionDetachCommand(TabRpcClient, { daemonid: sessionDaemonId, blockid: this.blockId });
+                        } catch (e) {
+                            modalsModel.pushModal("MessageModal", { children: `Error: ${e?.message || e}` });
+                        }
+                    });
+                },
             });
         }
 

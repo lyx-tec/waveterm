@@ -77,6 +77,7 @@ type TermWrapOptions = {
 export class TermWrap {
     tabId: string;
     blockId: string;
+    zoneId: string;
     ptyOffset: number;
     dataBytesProcessed: number;
     terminal: Terminal;
@@ -132,6 +133,7 @@ export class TermWrap {
         this.loaded = false;
         this.tabId = tabId;
         this.blockId = blockId;
+        this.zoneId = blockId;
         this.sendDataHandler = waveOptions.sendDataHandler;
         this.nodeModel = waveOptions.nodeModel;
         this.ptyOffset = 0;
@@ -325,7 +327,39 @@ export class TermWrap {
     }
 
     getZoneId(): string {
-        return this.blockId;
+        return this.zoneId;
+    }
+
+    async attachToDaemon(jobId: string): Promise<void> {
+        if (this.zoneId === jobId) {
+            return;
+        }
+        if (this.mainFileSubject) {
+            this.mainFileSubject.release();
+        }
+        this.terminal.clear();
+        this.ptyOffset = 0;
+        this.heldData = [];
+        this.zoneId = jobId;
+        this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
+        this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
+        await this.loadInitialTerminalData();
+    }
+
+    async detachFromDaemon(): Promise<void> {
+        if (this.zoneId === this.blockId) {
+            return;
+        }
+        if (this.mainFileSubject) {
+            this.mainFileSubject.release();
+        }
+        this.terminal.clear();
+        this.ptyOffset = 0;
+        this.heldData = [];
+        this.zoneId = this.blockId;
+        this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
+        this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
+        await this.loadInitialTerminalData();
     }
 
     setCursorStyle(cursorStyle: string) {
@@ -410,6 +444,7 @@ export class TermWrap {
 
         this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
         this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
+        console.log("[termwrap] initTerminal: zoneId=", this.getZoneId(), "blockId=", this.blockId);
 
         try {
             const rtInfo = await RpcApi.GetRTInfoCommand(TabRpcClient, {
@@ -552,7 +587,7 @@ export class TermWrap {
     }
 
     async resyncController(reason: string) {
-        dlog("resync controller", this.blockId, reason);
+        console.log("[termwrap] resync controller", this.blockId, reason);
         const rtOpts: RuntimeOpts = { termsize: { rows: this.terminal.rows, cols: this.terminal.cols } };
         try {
             await RpcApi.ControllerResyncCommand(TabRpcClient, {
