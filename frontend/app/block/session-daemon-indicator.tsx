@@ -97,7 +97,7 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
         fireAndForget(async () => {
             try {
                 const list = await RpcApi.SessionListCommand(TabRpcClient, { showall: true });
-                setSessions(list as SessionInfo[]);
+                setSessions((list ?? []) as SessionInfo[]);
             } catch (e) {
                 console.log("error loading session list:", e);
             }
@@ -150,8 +150,14 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                 className="iconbutton text-[13px] ml-[-4px]"
                 title={daemonId ? `Session: ${daemonId}` : "Attach to Session"}
                 onClick={() => setShowPopup((v) => !v)}
+                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
             >
                 <i className={`fa-sharp fa-solid ${daemonId ? "fa-link text-sky-500" : "fa-link-slash text-muted"}`} />
+                {daemonId && (
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", maxWidth: 72, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {daemonId.slice(0, 8)}
+                    </span>
+                )}
             </div>
             {showPopup && (
                 <FloatingPortal>
@@ -203,6 +209,8 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                         {sessions.map((s) => {
                             const isActive = s.daemonid === daemonId;
                             const blockCount = s.blocks?.length ?? 0;
+                            const canClose = blockCount === 0;
+                            const displayStatus = blockCount === 0 ? "idle" : s.status;
                             return (
                                 <div
                                     key={s.daemonid}
@@ -284,12 +292,43 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                                             gap: 5,
                                         }}
                                     >
-                                        <SessionStatusPill status={s.status} />
-                                        <span
-                                            style={{ fontSize: 11, color: isActive ? "#7dd3fc" : "var(--text-muted)" }}
-                                        >
-                                            {isActive ? "Active" : `${blockCount} block${blockCount === 1 ? "" : "s"}`}
-                                        </span>
+                                        <SessionStatusPill status={displayStatus} />
+                                        {canClose ? (
+                                            <span
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    fireAndForget(async () => {
+                                                        try {
+                                                            await RpcApi.SessionDeleteCommand(TabRpcClient, {
+                                                                daemonid: s.daemonid,
+                                                            });
+                                                            setSessions((prev) => prev.filter((x) => x.daemonid !== s.daemonid));
+                                                        } catch (e) {
+                                                            console.log("error closing session:", e);
+                                                        }
+                                                    });
+                                                }}
+                                                style={{
+                                                    fontSize: 11,
+                                                    color: "var(--text-muted)",
+                                                    cursor: "pointer",
+                                                    opacity: 0.6,
+                                                    display: "inline-flex",
+                                                    alignItems: "center",
+                                                    gap: 3,
+                                                }}
+                                                title="Close idle session"
+                                            >
+                                                <i className="fa-sharp fa-solid fa-xmark" />
+                                                Close
+                                            </span>
+                                        ) : (
+                                            <span
+                                                style={{ fontSize: 11, color: isActive ? "#7dd3fc" : "var(--text-muted)" }}
+                                            >
+                                                {isActive ? "Active" : `${blockCount} block${blockCount === 1 ? "" : "s"}`}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             );

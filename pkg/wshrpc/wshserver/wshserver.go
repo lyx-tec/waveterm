@@ -309,6 +309,10 @@ func (ws *WshServer) CreateSubBlockCommand(ctx context.Context, data wshrpc.Comm
 }
 
 func (ws *WshServer) ControllerDestroyCommand(ctx context.Context, blockId string) error {
+	status := blockcontroller.GetBlockControllerRuntimeStatus(blockId)
+	if status != nil && status.ShellProcStatus == blockcontroller.Status_Running {
+		return nil
+	}
 	blockcontroller.DestroyBlockController(blockId)
 	return nil
 }
@@ -1607,7 +1611,7 @@ func (ws *WshServer) SessionCreateCommand(ctx context.Context, data wshrpc.Comma
 }
 
 func (ws *WshServer) SessionDeleteCommand(ctx context.Context, data wshrpc.CommandSessionDeleteData) error {
-	_, err := wstore.DBGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
+	_, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
 	if err != nil {
 		return fmt.Errorf("session daemon %q not found: %w", data.DaemonId, err)
 	}
@@ -1618,11 +1622,9 @@ func (ws *WshServer) SessionDeleteCommand(ctx context.Context, data wshrpc.Comma
 		sessiondaemon.Manager.Remove(data.DaemonId)
 	}
 
-	err = wstore.DBUpdateFn(ctx, data.DaemonId, func(sd *waveobj.SessionDaemon) {
-		sd.Status = "done"
-	})
+	err = wstore.DBDelete(ctx, waveobj.OType_SessionDaemon, data.DaemonId)
 	if err != nil {
-		return fmt.Errorf("update session daemon status: %w", err)
+		return fmt.Errorf("delete session daemon: %w", err)
 	}
 	return nil
 }
@@ -1633,7 +1635,7 @@ func (ws *WshServer) SessionListCommand(ctx context.Context, data wshrpc.Command
 		return nil, fmt.Errorf("list session daemons: %w", err)
 	}
 
-	var rtn []wshrpc.SessionInfoRtnData
+	rtn := make([]wshrpc.SessionInfoRtnData, 0)
 	for _, dbDaemon := range allDaemons {
 		if dbDaemon.IsAnonymous && !data.ShowAll {
 			continue
@@ -1651,7 +1653,7 @@ func (ws *WshServer) SessionListCommand(ctx context.Context, data wshrpc.Command
 }
 
 func (ws *WshServer) SessionAttachCommand(ctx context.Context, data wshrpc.CommandSessionAttachData) error {
-	dbDaemon, err := wstore.DBGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
+	dbDaemon, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
 	if err != nil {
 		return fmt.Errorf("session daemon %q not found: %w", data.DaemonId, err)
 	}
@@ -1675,7 +1677,7 @@ func (ws *WshServer) SessionAttachCommand(ctx context.Context, data wshrpc.Comma
 }
 
 func (ws *WshServer) SessionDetachCommand(ctx context.Context, data wshrpc.CommandSessionDetachData) error {
-	_, err := wstore.DBGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
+	_, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
 	if err != nil {
 		return fmt.Errorf("session daemon %q not found: %w", data.DaemonId, err)
 	}
@@ -1701,7 +1703,7 @@ func (ws *WshServer) SessionDetachCommand(ctx context.Context, data wshrpc.Comma
 }
 
 func (ws *WshServer) SessionInfoCommand(ctx context.Context, data wshrpc.CommandSessionInfoData) (*wshrpc.SessionInfoRtnData, error) {
-	dbDaemon, err := wstore.DBGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
+	dbDaemon, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
 	if err != nil {
 		return nil, fmt.Errorf("session daemon %q not found: %w", data.DaemonId, err)
 	}
@@ -1709,7 +1711,7 @@ func (ws *WshServer) SessionInfoCommand(ctx context.Context, data wshrpc.Command
 }
 
 func (ws *WshServer) SessionTagCommand(ctx context.Context, data wshrpc.CommandSessionTagData) error {
-	_, err := wstore.DBGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
+	_, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
 	if err != nil {
 		return fmt.Errorf("session daemon %q not found: %w", data.DaemonId, err)
 	}
@@ -1732,6 +1734,9 @@ func (ws *WshServer) SessionTagCommand(ctx context.Context, data wshrpc.CommandS
 }
 
 func buildSessionInfoRtnData(ctx context.Context, dbDaemon *waveobj.SessionDaemon) (*wshrpc.SessionInfoRtnData, error) {
+	if dbDaemon == nil {
+		return nil, fmt.Errorf("session daemon is nil")
+	}
 	blocks := sessiondaemon.Manager.GetBlocksForDaemon(dbDaemon.OID)
 	return &wshrpc.SessionInfoRtnData{
 		DaemonId:    dbDaemon.OID,

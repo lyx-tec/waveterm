@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"runtime"
 	"sync"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 )
 
 const (
-	DefaultAnonymousIdleTimeout = 3600  // 1h
+	DefaultAnonymousIdleTimeout = 600 // 10min
 	DefaultNamedIdleTimeout     = 86400 // 24h
 	IdleCheckInterval           = 60    // 检查间隔（秒）
 )
@@ -169,13 +170,16 @@ func (sd *SessionDaemonManager) AttachBlock(ctx context.Context, daemonId string
 	sd.Lock.Unlock()
 	defer daemon.Lock.Unlock()
 	daemon.Blocks[blockId] = true
+	// Reset idle countdown: block attached, daemon is no longer idle.
 	wstore.DBUpdateFn(ctx, daemonId, func(dbD *waveobj.SessionDaemon) {
 		dbD.IdleSince = 0
 	})
 }
 
 func (sd *SessionDaemonManager) DetachBlock(ctx context.Context, daemonId string, blockId string) {
-	log.Printf("[sessiondaemon] DetachBlock: daemon=%s block=%s", daemonId, blockId)
+	stackBuf := make([]byte, 4096)
+	stackLen := runtime.Stack(stackBuf, false)
+	log.Printf("[sessiondaemon] DetachBlock: daemon=%s block=%s stack:\n%s", daemonId, blockId, string(stackBuf[:stackLen]))
 	sd.Lock.Lock()
 	daemon, ok := sd.Daemons[daemonId]
 	if !ok {
@@ -187,8 +191,11 @@ func (sd *SessionDaemonManager) DetachBlock(ctx context.Context, daemonId string
 	defer daemon.Lock.Unlock()
 	delete(daemon.Blocks, blockId)
 	if len(daemon.Blocks) == 0 {
+		// Start idle countdown (IdleTimeout in seconds).
+		// Survives app restart: if daemon was idle before shutdown,
+		// it resumes counting down from where it left off.
 		wstore.DBUpdateFn(ctx, daemonId, func(dbD *waveobj.SessionDaemon) {
-			dbD.IdleSince = time.Now().UnixMilli()
+			dbD.IdleSince = dbD.IdleTimeout
 		})
 	}
 }
@@ -258,6 +265,35 @@ func (sd *SessionDaemonManager) StartIdleReaper(ctx context.Context) {
 	}()
 }
 
+// cleanupDeadBlocks removes block IDs from the daemon's in-memory
+// Blocks map that no longer exist in the database. This handles the
+// case where a block was deleted without calling DetachBlock.
+func (sd *SessionDaemonManager) cleanupDeadBlocks(ctx context.Context, daemonId string, memDaemon *SessionDaemon) {
+	memDaemon.Lock.Lock()
+	var deadBlocks []string
+	for blockId := range memDaemon.Blocks {
+		_, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+		if err != nil {
+			deadBlocks = append(deadBlocks, blockId)
+		}
+	}
+	for _, blockId := range deadBlocks {
+		delete(memDaemon.Blocks, blockId)
+	}
+	memDaemon.Lock.Unlock()
+
+	if len(deadBlocks) > 0 {
+		log.Printf("[sessiondaemon] cleanupDeadBlocks: daemon=%s removed %d dead blocks: %v", daemonId, len(deadBlocks), deadBlocks)
+		remaining := len(memDaemon.Blocks)
+		if remaining == 0 {
+			// All blocks are dead, start idle countdown.
+			wstore.DBUpdateFn(ctx, daemonId, func(dbD *waveobj.SessionDaemon) {
+				dbD.IdleSince = dbD.IdleTimeout
+			})
+		}
+	}
+}
+
 func (sd *SessionDaemonManager) reapIdleDaemons(ctx context.Context) {
 	allDaemons, err := wstore.DBGetAllObjsByType[*waveobj.SessionDaemon](ctx, waveobj.OType_SessionDaemon)
 	if err != nil {
@@ -274,22 +310,36 @@ func (sd *SessionDaemonManager) reapIdleDaemons(ctx context.Context) {
 		sd.Lock.Unlock()
 
 		if hasMem && memDaemon.HasAttachedBlocks() {
-			continue
-		}
-
-		if dbDaemon.IdleTimeout <= 0 || dbDaemon.IdleSince == 0 {
-			continue
-		}
-
-		if time.Since(time.UnixMilli(dbDaemon.IdleSince)) > time.Duration(dbDaemon.IdleTimeout)*time.Second {
-			log.Printf("[sessiondaemon:%s] idle timeout reached, terminating", dbDaemon.OID)
-			if hasMem {
-				memDaemon.Stop(ctx)
-				sd.Remove(dbDaemon.OID)
+			// Verify all attached blocks are still alive. If a block
+			// was deleted without proper detach, clean it up here
+			// to prevent the daemon from holding onto a dead block forever.
+			sd.cleanupDeadBlocks(ctx, dbDaemon.OID, memDaemon)
+			if memDaemon.HasAttachedBlocks() {
+				continue
 			}
-			wstore.DBUpdateFn(ctx, dbDaemon.OID, func(sdDb *waveobj.SessionDaemon) {
-				sdDb.Status = "done"
-			})
 		}
+
+		if dbDaemon.IdleTimeout <= 0 {
+			continue
+		}
+
+		// IdleSince is a countdown in seconds (set to IdleTimeout when idle starts).
+		// Decrement inside the DB update closure to avoid race with concurrent AttachBlock
+		// which resets IdleSince to 0.
+		var newRemaining int64
+		wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbD *waveobj.SessionDaemon) {
+			dbD.IdleSince -= IdleCheckInterval
+			newRemaining = dbD.IdleSince
+		})
+		if newRemaining > 0 {
+			continue
+		}
+
+		log.Printf("[sessiondaemon:%s] idle timeout reached, terminating", dbDaemon.OID)
+		if hasMem {
+			memDaemon.Stop(ctx)
+			sd.Remove(dbDaemon.OID)
+		}
+		wstore.DBDelete(ctx, waveobj.OType_SessionDaemon, dbDaemon.OID)
 	}
 }

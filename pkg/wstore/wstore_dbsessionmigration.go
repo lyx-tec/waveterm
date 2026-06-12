@@ -49,7 +49,7 @@ func runSessionDaemonMigration(ctx context.Context) error {
 			IsAnonymous: true,
 			Status:      "running",
 			CreatedAt:   time.Now().UnixMilli(),
-			IdleTimeout: 3600,
+			IdleTimeout: 60,
 		}
 
 		err = DBInsert(ctx, dbDaemon)

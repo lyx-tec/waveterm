@@ -766,7 +766,7 @@ export class TermViewModel implements ViewModel {
             return false;
         }
         const shellProcStatus = globalStore.get(this.shellProcStatus);
-        if ((shellProcStatus == "done" || shellProcStatus == "init") && keyutil.checkKeyPressed(waveEvent, "Enter")) {
+        if (shellProcStatus == "done" && keyutil.checkKeyPressed(waveEvent, "Enter")) {
             fireAndForget(() => this.forceRestartController());
             return false;
         }

@@ -370,12 +370,17 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         let cancelled = false;
         fireAndForget(async () => {
             try {
+                if (cancelled) {
+                    return;
+                }
                 const info = await RpcApi.SessionInfoCommand(TabRpcClient, { daemonid: daemonId });
                 if (!cancelled && info.jobid) {
                     await termWrap.attachToDaemon(info.jobid);
                 }
             } catch (e) {
-                console.log("error attaching terminal to session daemon", daemonId, e);
+                if (!cancelled) {
+                    console.log("error attaching terminal to session daemon", daemonId, e);
+                }
             }
         });
         return () => {

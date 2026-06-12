@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/filestore"
 	"github.com/wavetermdev/waveterm/pkg/remote"
 	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
+	"github.com/wavetermdev/waveterm/pkg/sessiondaemon"
 	"github.com/wavetermdev/waveterm/pkg/util/ds"
 	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
@@ -171,8 +173,16 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 	if existing != nil {
 		existingConnName := existing.GetConnName()
 		if existingConnName != connName {
+			// For non-local connections, check readiness before switching
+			if !conncontroller.IsLocalConnName(connName) && !conncontroller.IsWslConnName(connName) && existingConnName == "" {
+				err = CheckConnStatus(blockId)
+				if err != nil {
+					log.Printf("not stopping blockcontroller %s due to conn change (from %q to %q): new connection not ready\n", blockId, existingConnName, connName)
+					return fmt.Errorf("cannot start shellproc: %w", err)
+				}
+			}
 			log.Printf("stopping blockcontroller %s due to conn change (from %q to %q)\n", blockId, existingConnName, connName)
-			DestroyBlockController(blockId)
+			stopBlockController(blockId)
 			time.Sleep(100 * time.Millisecond)
 			existing = nil
 		}
@@ -191,6 +201,10 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 
 	// Auto-create anonymous daemon for SSH blocks without daemonid
 	if daemonId == "" && controllerName == BlockController_Shell && !conncontroller.IsLocalConnName(connName) && !conncontroller.IsWslConnName(connName) {
+		err = CheckConnStatus(blockId)
+		if err != nil {
+			return fmt.Errorf("cannot start shellproc: %w", err)
+		}
 		newDaemonId, err := autoCreateSessionDaemon(ctx, blockId, blockData.Meta, connName, rtOpts)
 		if err != nil {
 			return fmt.Errorf("auto-create session daemon: %w", err)
@@ -198,11 +212,29 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 		daemonId = newDaemonId
 	}
 
+	// For local/WSL connections, session daemon is not applicable — clear and fall through to ShellController
+	if daemonId != "" && controllerName == BlockController_Shell && (conncontroller.IsLocalConnName(connName) || conncontroller.IsWslConnName(connName)) {
+		if existing != nil {
+			DestroyBlockController(blockId)
+			time.Sleep(100 * time.Millisecond)
+			existing = nil
+		}
+		_ = wstore.DBUpdateFn(ctx, blockId, func(block *waveobj.Block) {
+			delete(block.Meta, waveobj.MetaKey_SessionDaemonId)
+		})
+		daemonId = ""
+	}
+
 	// Validate existing daemon: if stale (done/not found), clear and auto-create
 	if daemonId != "" && controllerName == BlockController_Shell {
 		dbDaemon, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, daemonId)
 		if err != nil || dbDaemon.Status == "done" {
 			log.Printf("[sessiondaemon] stale daemon=%s block=%s status=%s err=%v, clearing and recreating", daemonId, blockId, func() string { if dbDaemon != nil { return dbDaemon.Status }; return "db_load_error" }(), err)
+			if existing != nil {
+				DestroyBlockController(blockId)
+				time.Sleep(100 * time.Millisecond)
+				existing = nil
+			}
 			_ = wstore.DBUpdateFn(ctx, blockId, func(block *waveobj.Block) {
 				delete(block.Meta, waveobj.MetaKey_SessionDaemonId)
 			})
@@ -225,7 +257,7 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 				needsReplace = true
 			}
 		case *SessionDaemonController:
-			if daemonId == "" {
+			if daemonId == "" || conncontroller.IsLocalConnName(connName) || conncontroller.IsWslConnName(connName) {
 				needsReplace = true
 			}
 		case *TsunamiController:
@@ -236,7 +268,7 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 
 		if needsReplace {
 			log.Printf("stopping blockcontroller %s due to controller type change\n", blockId)
-			DestroyBlockController(blockId)
+			stopBlockController(blockId)
 			time.Sleep(100 * time.Millisecond)
 			existing = nil
 		}
@@ -244,9 +276,12 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 
 	// Force restart if requested
 	if force && existing != nil {
-		DestroyBlockController(blockId)
-		time.Sleep(100 * time.Millisecond)
-		existing = nil
+		status := existing.GetRuntimeStatus()
+		if status.ShellProcStatus != Status_Running {
+			stopBlockController(blockId)
+			time.Sleep(100 * time.Millisecond)
+			existing = nil
+		}
 	}
 
 	// Destroy done controllers before restarting
@@ -254,7 +289,7 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 		status := existing.GetRuntimeStatus()
 		if status.ShellProcStatus == Status_Done {
 			log.Printf("destroying blockcontroller %s with done status before restart\n", blockId)
-			DestroyBlockController(blockId)
+			stopBlockController(blockId)
 			time.Sleep(100 * time.Millisecond)
 			existing = nil
 		}
@@ -271,6 +306,14 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 			sdc.DaemonId = daemonId
 			controller = sdc
 			registerController(blockId, controller)
+			// Ensure the daemon is in memory before attaching the block.
+			// On restart, the daemon exists in DB but not in the in-memory
+			// manager – AttachBlock silently no-ops if not found.
+			dbDaemon, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, daemonId)
+			if err == nil {
+				sessiondaemon.Manager.GetOrCreate(ctx, dbDaemon)
+			}
+			sessiondaemon.Manager.AttachBlock(ctx, daemonId, blockId)
 
 		case controllerName == BlockController_Shell || controllerName == BlockController_Cmd:
 			controller = MakeShellController(tabId, blockId, controllerName, connName)
@@ -316,13 +359,23 @@ func GetBlockControllerRuntimeStatus(blockId string) *BlockControllerRuntimeStat
 	return controller.GetRuntimeStatus()
 }
 
-func DestroyBlockController(blockId string) {
+func stopBlockController(blockId string) {
 	controller := getController(blockId)
 	if controller == nil {
 		return
 	}
+	stackBuf := make([]byte, 4096)
+	stackLen := runtime.Stack(stackBuf, false)
+	log.Printf("[sessiondaemon] stopBlockController: block=%s stack:\n%s", blockId, string(stackBuf[:stackLen]))
 	controller.Stop(true, Status_Done, true)
 	wstore.DeleteRTInfo(waveobj.MakeORef(waveobj.OType_Block, blockId))
+}
+
+func DestroyBlockController(blockId string) {
+	stackBuf := make([]byte, 4096)
+	stackLen := runtime.Stack(stackBuf, false)
+	log.Printf("[sessiondaemon] DestroyBlockController: block=%s stack:\n%s", blockId, string(stackBuf[:stackLen]))
+	stopBlockController(blockId)
 	deleteController(blockId)
 }
 

@@ -3,6 +3,8 @@
 
 import * as electron from "electron";
 import * as child_process from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import * as readline from "readline";
 import { WebServerEndpointVarName, WSServerEndpointVarName } from "../frontend/util/endpoints";
 import { AuthKey, WaveAuthKeyEnv } from "./authkey";

@@ -16,6 +16,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/sessiondaemon"
 	"github.com/wavetermdev/waveterm/pkg/shellexec"
 	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
+	"github.com/wavetermdev/waveterm/pkg/utilds"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wps"
@@ -34,7 +35,7 @@ type SessionDaemonController struct {
 	TabId          string
 	InputSessionId string
 	inputSeqNum    int
-	versionTs      int64
+	versionTs      utilds.VersionTs
 }
 
 func MakeSessionDaemonController(tabId string, blockId string, connName string) *SessionDaemonController {
@@ -44,7 +45,6 @@ func MakeSessionDaemonController(tabId string, blockId string, connName string) 
 		ConnName:       connName,
 		TabId:          tabId,
 		InputSessionId: uuid.New().String(),
-		versionTs:      1,
 	}
 }
 
@@ -198,9 +198,7 @@ func (sdc *SessionDaemonController) Stop(graceful bool, newStatus string, destro
 			daemon.Stop(ctx)
 		}
 		sessiondaemon.Manager.Remove(sdc.DaemonId)
-		wstore.DBUpdateFn(ctx, sdc.DaemonId, func(sd *waveobj.SessionDaemon) {
-			sd.Status = "done"
-		})
+		wstore.DBDelete(ctx, waveobj.OType_SessionDaemon, sdc.DaemonId)
 	} else {
 		log.Printf("[sessiondaemon] stop: daemon=%s remaining blocks=%d anonymous=%v", sdc.DaemonId, remaining, dbDaemon.IsAnonymous)
 	}
@@ -222,7 +220,7 @@ func (sdc *SessionDaemonController) GetRuntimeStatus() *BlockControllerRuntimeSt
 	sdc.WithLock(func() {
 		rtn.BlockId = sdc.BlockId
 		rtn.ShellProcConnName = sdc.ConnName
-		rtn.Version = sdc.versionTs
+		rtn.Version = sdc.versionTs.GetVersionTs()
 		daemon := sessiondaemon.Manager.Get(sdc.DaemonId)
 		if daemon != nil {
 			if daemon.JobId == "" {
@@ -239,9 +237,7 @@ func (sdc *SessionDaemonController) GetRuntimeStatus() *BlockControllerRuntimeSt
 }
 
 func (sdc *SessionDaemonController) incrementVersion() {
-	sdc.Lock.Lock()
-	defer sdc.Lock.Unlock()
-	sdc.versionTs++
+	sdc.versionTs.GetVersionTs()
 }
 
 func (sdc *SessionDaemonController) GetConnName() string {

@@ -100,7 +100,7 @@ func init() {
 
 	sessionCreateCmd.Flags().StringVarP(&sessionCreateFlagName, "name", "n", "", "session name (creates a named daemon)")
 	sessionCreateCmd.Flags().StringVarP(&sessionCreateFlagConnection, "connection", "c", "", "connection name (e.g. ssh://host)")
-	sessionCreateCmd.Flags().Int64Var(&sessionCreateFlagIdleTimeout, "idle-timeout", 0, "idle timeout in seconds (default: 86400 for named, 3600 for anonymous)")
+	sessionCreateCmd.Flags().Int64Var(&sessionCreateFlagIdleTimeout, "idle-timeout", 0, "idle timeout in seconds (default: 86400 for named, 60 for anonymous)")
 
 	sessionListCmd.Flags().BoolVarP(&sessionListFlagAll, "all", "a", false, "include anonymous session daemons")
 

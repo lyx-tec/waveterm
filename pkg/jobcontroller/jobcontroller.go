@@ -760,6 +760,17 @@ func StartJob(ctx context.Context, params StartJobParams) (string, error) {
 		},
 	})
 
+	routeId := wshutil.MakeJobRouteId(jobId)
+	waitCtx, cancelFn := context.WithTimeout(ctx, 5*time.Second)
+	err = wshutil.DefaultRouter.WaitForRegister(waitCtx, routeId)
+	cancelFn()
+	if err != nil {
+		log.Printf("[job:%s] warning: route not established after start: %v", jobId, err)
+	} else {
+		SetJobConnStatus(jobId, JobConnStatus_Connected)
+		log.Printf("[job:%s] route established, job connected", jobId)
+	}
+
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("jobcontroller:runOutputLoop", recover())
