@@ -200,19 +200,6 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 	// Check for SessionDaemon controller
 	daemonId := blockData.Meta.GetString(waveobj.MetaKey_SessionDaemonId, "")
 
-	// Auto-create anonymous daemon for SSH blocks without daemonid
-	if daemonId == "" && controllerName == BlockController_Shell && !conncontroller.IsLocalConnName(connName) && !conncontroller.IsWslConnName(connName) {
-		err = CheckConnStatus(blockId)
-		if err != nil {
-			return fmt.Errorf("cannot start shellproc: %w", err)
-		}
-		newDaemonId, err := autoCreateSessionDaemon(ctx, blockId, blockData.Meta, connName, rtOpts)
-		if err != nil {
-			return fmt.Errorf("auto-create session daemon: %w", err)
-		}
-		daemonId = newDaemonId
-	}
-
 	// For local/WSL connections, session daemon is not applicable — clear and fall through to ShellController
 	if daemonId != "" && controllerName == BlockController_Shell && (conncontroller.IsLocalConnName(connName) || conncontroller.IsWslConnName(connName)) {
 		if existing != nil {
@@ -226,11 +213,11 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 		daemonId = ""
 	}
 
-	// Validate existing daemon: if stale (done/not found), clear and auto-create
+	// Validate existing daemon: if stale (done/not found), clear it
 	if daemonId != "" && controllerName == BlockController_Shell {
 		dbDaemon, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, daemonId)
 		if err != nil || dbDaemon.Status == "done" {
-			log.Printf("[sessiondaemon] stale daemon=%s block=%s status=%s err=%v, clearing and recreating", daemonId, blockId, func() string { if dbDaemon != nil { return dbDaemon.Status }; return "db_load_error" }(), err)
+			log.Printf("[sessiondaemon] stale daemon=%s block=%s status=%s err=%v, clearing", daemonId, blockId, func() string { if dbDaemon != nil { return dbDaemon.Status }; return "db_load_error" }(), err)
 			if existing != nil {
 				DestroyBlockController(blockId)
 				time.Sleep(100 * time.Millisecond)
@@ -240,11 +227,6 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 				delete(block.Meta, waveobj.MetaKey_SessionDaemonId)
 			})
 			daemonId = ""
-			newDaemonId, err := autoCreateSessionDaemon(ctx, blockId, blockData.Meta, connName, rtOpts)
-			if err != nil {
-				return fmt.Errorf("auto-create session daemon after stale cleanup: %w", err)
-			}
-			daemonId = newDaemonId
 		}
 	}
 

@@ -27,7 +27,8 @@ function getSessionDisplayAtom(daemonId: string): jotai.PrimitiveAtom<SessionDis
     return a;
 }
 
-function formatCreatedTime(ms: number): string {
+function formatCreatedTime(ms: number | undefined): string {
+    if (ms == null) return "";
     const d = new Date(ms);
     const now = new Date();
     const diffMs = now.getTime() - d.getTime();
@@ -113,16 +114,26 @@ function SessionStatusPill({ status }: { status: string }) {
 export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemonIndicatorProps) {
     const waveEnv = useWaveEnv<BlockEnv>();
     const daemonId = jotai.useAtomValue(waveEnv.getBlockMetaKeyAtom(blockId, "session:daemonid"));
+    const connName = jotai.useAtomValue(waveEnv.getBlockMetaKeyAtom(blockId, "connection"));
     const [showPopup, setShowPopup] = useState(false);
     const [sessions, setSessions] = useState<SessionInfo[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editName, setEditName] = useState("");
+    const [creating, setCreating] = useState(false);
+    const creatingRef = useRef(false);
+    const [showCreateInput, setShowCreateInput] = useState(false);
+    const [newSessionName, setNewSessionName] = useState("");
+    const createInputRef = useRef<HTMLInputElement>(null);
     const sessionDisplayAtom = daemonId ? getSessionDisplayAtom(daemonId) : null;
     const sessionDisplay = jotai.useAtomValue(sessionDisplayAtom ?? jotai.atom<SessionDisplayData>({ name: null, isanonymous: true }));
     const editInputRef = useRef<HTMLInputElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
     const iconRef = useRef<HTMLDivElement>(null);
-    const { refs, floatingStyles } = useFloating({
+    const { floatingStyles } = useFloating({
+        elements: {
+            reference: iconRef.current,
+            floating: popupRef.current,
+        },
         open: showPopup,
         onOpenChange: setShowPopup,
         placement: "bottom-end",
@@ -172,7 +183,7 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
         }
     }, [showPopup]);
 
-    const handleAttach = (targetDaemonId: string) => {
+    const handleAttach = useCallback((targetDaemonId: string) => {
         if (targetDaemonId === daemonId) return;
         if (editingId) return;
         fireAndForget(async () => {
@@ -183,7 +194,7 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                 console.log("error switching session:", e);
             }
         });
-    };
+    }, [daemonId, editingId, blockId]);
 
     const handleStartEdit = useCallback((daemonId: string, currentName: string) => {
         setEditingId(daemonId);
@@ -213,36 +224,62 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
         setEditingId(null);
     }, []);
 
+    const handleCreateAndAttach = useCallback(async (name?: string) => {
+        if (!connName || creatingRef.current) return;
+        creatingRef.current = true;
+        setCreating(true);
+        try {
+            const info = await RpcApi.SessionCreateCommand(TabRpcClient, { connection: connName });
+            if (info?.daemonid) {
+                if (name) {
+                    await RpcApi.SessionTagCommand(TabRpcClient, { daemonid: info.daemonid, name });
+                }
+                await RpcApi.SessionAttachCommand(TabRpcClient, {
+                    daemonid: info.daemonid,
+                    blockid: blockId,
+                    currentdaemonid: daemonId ?? undefined,
+                });
+                setShowPopup(false);
+            }
+        } catch (e) {
+            console.log("error creating session:", e);
+        } finally {
+            creatingRef.current = false;
+            setCreating(false);
+        }
+    }, [connName, blockId, daemonId]);
+
     if (!useTermHeader) {
         return null;
     }
 
+    const isSshConn = connName && !connName.startsWith("local") && !connName.startsWith("wsl://");
+    const visible = !!daemonId || isSshConn;
+
     return (
         <>
             <div
-                ref={(elem) => {
-                    iconRef.current = elem;
-                    refs.setReference(elem);
-                }}
+                ref={iconRef}
                 className="iconbutton text-[13px] ml-[-4px]"
-                title={daemonId ? `Session: ${daemonId}` : "Attach to Session"}
+                title={daemonId ? `Session: ${daemonId}` : "No session attached"}
                 onClick={() => setShowPopup((v) => !v)}
-                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                style={{ display: visible ? "inline-flex" : "none", alignItems: "center", gap: 4 }}
             >
                 <i className={`fa-sharp fa-solid ${daemonId ? "fa-link text-sky-500" : "fa-link-slash text-muted"}`} />
-                {daemonId && (
+                {daemonId ? (
                     <span style={{ fontSize: 11, color: "var(--text-muted)", maxWidth: 72, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {sessionDisplay.isanonymous ? daemonId.slice(0, 8) : (sessionDisplay.name || daemonId.slice(0, 8))}
+                    </span>
+                ) : (
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", opacity: 0.6 }}>
+                        non session
                     </span>
                 )}
             </div>
             {showPopup && (
                 <FloatingPortal>
                     <div
-                        ref={(elem) => {
-                            popupRef.current = elem;
-                            refs.setFloating(elem);
-                        }}
+                        ref={popupRef}
                         style={{ ...popupStyle, ...floatingStyles }}
                         onMouseDown={(e) => e.stopPropagation()}
                         onFocusCapture={(e) => e.stopPropagation()}
@@ -278,6 +315,75 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                                 {sessions.length}
                             </span>
                         </div>
+                        {showCreateInput ? (
+                            <div
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    padding: "4px 8px",
+                                    marginBottom: 4,
+                                    borderRadius: 8,
+                                    background: "rgba(56, 189, 248, 0.08)",
+                                    border: "1px solid rgba(56, 189, 248, 0.30)",
+                                    opacity: creating ? 0.5 : 1,
+                                }}
+                            >
+                                <i className="fa-sharp fa-solid fa-plus" style={{ color: "#38bdf8", fontSize: 13, marginRight: 8 }} />
+                                <input
+                                    ref={createInputRef}
+                                    type="text"
+                                    value={newSessionName}
+                                    disabled={creating}
+                                    onChange={(e) => setNewSessionName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            const name = newSessionName.trim();
+                                            handleCreateAndAttach(name || undefined);
+                                            setShowCreateInput(false);
+                                            setNewSessionName("");
+                                        }
+                                        if (e.key === "Escape") {
+                                            setShowCreateInput(false);
+                                            setNewSessionName("");
+                                        }
+                                    }}
+                                    placeholder="Session name (optional)"
+                                    style={{
+                                        flex: 1,
+                                        background: "transparent",
+                                        border: "none",
+                                        outline: "none",
+                                        color: "#7dd3fc",
+                                        fontSize: 13,
+                                        fontWeight: 600,
+                                    }}
+                                />
+                            </div>
+                        ) : (
+                            <div
+                                onClick={() => {
+                                    setShowCreateInput(true);
+                                    setTimeout(() => createInputRef.current?.focus(), 0);
+                                }}
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    padding: "8px 10px",
+                                    marginBottom: 4,
+                                    cursor: creating ? "default" : "pointer",
+                                    borderRadius: 8,
+                                    background: "rgba(56, 189, 248, 0.08)",
+                                    border: "1px solid rgba(56, 189, 248, 0.18)",
+                                    opacity: creating ? 0.5 : 1,
+                                }}
+                            >
+                                <i className={`fa-sharp fa-solid ${creating ? "fa-spinner fa-spin" : "fa-plus"}`} style={{ color: "#38bdf8", fontSize: 13 }} />
+                                <span style={{ fontSize: 13, fontWeight: 600, color: "#7dd3fc" }}>
+                                    {creating ? "Creating..." : "Create new session"}
+                                </span>
+                            </div>
+                        )}
                         {sessions.length === 0 && (
                             <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "14px 10px" }}>
                                 Loading sessions...
