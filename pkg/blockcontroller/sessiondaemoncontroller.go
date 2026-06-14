@@ -84,13 +84,13 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 			log.Printf("[sessiondaemon] start: reconnecting to existing job %s", dbDaemon.JobId)
 			err = jobcontroller.ReconnectJob(ctx, dbDaemon.JobId, rtOpts)
 			if err != nil {
-				log.Printf("[sessiondaemon] start: reconnect failed job=%s err=%v", dbDaemon.JobId, err)
-				return fmt.Errorf("error reconnecting to existing job %q: %w", dbDaemon.JobId, err)
+				log.Printf("[sessiondaemon] start: reconnect failed job=%s err=%v, starting new job", dbDaemon.JobId, err)
+			} else {
+				log.Printf("[sessiondaemon] start: reconnect ok job=%s", dbDaemon.JobId)
+				sdc.incrementVersion()
+				sdc.sendControllerStatus()
+				return nil
 			}
-			log.Printf("[sessiondaemon] start: reconnect ok job=%s", dbDaemon.JobId)
-			sdc.incrementVersion()
-			sdc.sendControllerStatus()
-			return nil
 		}
 	}
 
@@ -190,18 +190,7 @@ func (sdc *SessionDaemonController) Stop(graceful bool, newStatus string, destro
 		log.Printf("[sessiondaemon] stop: db lookup failed daemon=%s err=%v", sdc.DaemonId, err)
 		return
 	}
-	remaining := len(sessiondaemon.Manager.GetBlocksForDaemon(sdc.DaemonId))
-	if dbDaemon.IsAnonymous && remaining == 0 {
-		log.Printf("[sessiondaemon] stop: stopping anonymous daemon %s (no blocks remaining)", sdc.DaemonId)
-		daemon := sessiondaemon.Manager.Get(sdc.DaemonId)
-		if daemon != nil {
-			daemon.Stop(ctx)
-		}
-		sessiondaemon.Manager.Remove(sdc.DaemonId)
-		wstore.DBDelete(ctx, waveobj.OType_SessionDaemon, sdc.DaemonId)
-	} else {
-		log.Printf("[sessiondaemon] stop: daemon=%s remaining blocks=%d anonymous=%v", sdc.DaemonId, remaining, dbDaemon.IsAnonymous)
-	}
+	log.Printf("[sessiondaemon] stop: daemon=%s remaining blocks=%d anonymous=%v", sdc.DaemonId, len(sessiondaemon.Manager.GetBlocksForDaemon(sdc.DaemonId)), dbDaemon.IsAnonymous)
 }
 
 func (sdc *SessionDaemonController) SendInput(inputUnion *BlockInputUnion) error {

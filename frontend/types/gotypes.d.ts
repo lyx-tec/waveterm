@@ -639,6 +639,7 @@ declare global {
     type CommandSessionAttachData = {
         daemonid: string;
         blockid: string;
+        currentdaemonid?: string;
     };
 
     // wshrpc.CommandSessionCreateData
@@ -1436,6 +1437,7 @@ declare global {
         jobid?: string;
         isanonymous: boolean;
         status: string;
+        cwd?: string;
         createdat: number;
         idletimeout: number;
         idlesince?: number;

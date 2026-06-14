@@ -1653,8 +1653,19 @@ func (ws *WshServer) SessionListCommand(ctx context.Context, data wshrpc.Command
 }
 
 func (ws *WshServer) SessionAttachCommand(ctx context.Context, data wshrpc.CommandSessionAttachData) error {
+	if data.CurrentDaemonId != "" && data.CurrentDaemonId == data.DaemonId {
+		return nil
+	}
+
+	if data.CurrentDaemonId != "" {
+		sessiondaemon.Manager.DetachBlock(ctx, data.CurrentDaemonId, data.BlockId)
+	}
+
 	dbDaemon, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
 	if err != nil {
+		if data.CurrentDaemonId != "" {
+			sessiondaemon.Manager.AttachBlock(ctx, data.CurrentDaemonId, data.BlockId)
+		}
 		return fmt.Errorf("session daemon %q not found: %w", data.DaemonId, err)
 	}
 
@@ -1670,9 +1681,15 @@ func (ws *WshServer) SessionAttachCommand(ctx context.Context, data wshrpc.Comma
 		block.JobId = dbDaemon.JobId
 	})
 	if err != nil {
+		sessiondaemon.Manager.DetachBlock(ctx, data.DaemonId, data.BlockId)
+		if data.CurrentDaemonId != "" {
+			sessiondaemon.Manager.AttachBlock(ctx, data.CurrentDaemonId, data.BlockId)
+		}
 		return fmt.Errorf("update block meta: %w", err)
 	}
+
 	resyncBlockController(ctx, data.BlockId)
+	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Block, data.BlockId))
 	return nil
 }
 
@@ -1698,6 +1715,7 @@ func (ws *WshServer) SessionDetachCommand(ctx context.Context, data wshrpc.Comma
 			return fmt.Errorf("update block meta: %w", err)
 		}
 		resyncBlockController(ctx, blockId)
+		wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Block, blockId))
 	}
 	return nil
 }
@@ -1745,6 +1763,7 @@ func buildSessionInfoRtnData(ctx context.Context, dbDaemon *waveobj.SessionDaemo
 		JobId:       dbDaemon.JobId,
 		IsAnonymous: dbDaemon.IsAnonymous,
 		Status:      dbDaemon.Status,
+		Cwd:         dbDaemon.Cwd,
 		CreatedAt:   dbDaemon.CreatedAt,
 		IdleTimeout: dbDaemon.IdleTimeout,
 		IdleSince:   dbDaemon.IdleSince,

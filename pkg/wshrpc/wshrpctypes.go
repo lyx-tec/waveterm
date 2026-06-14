@@ -951,8 +951,9 @@ type CommandSessionListData struct {
 }
 
 type CommandSessionAttachData struct {
-	DaemonId string `json:"daemonid"`
-	BlockId  string `json:"blockid"`
+	DaemonId        string `json:"daemonid"`
+	BlockId         string `json:"blockid"`
+	CurrentDaemonId string `json:"currentdaemonid,omitempty"`
 }
 
 type CommandSessionDetachData struct {
@@ -976,6 +977,7 @@ type SessionInfoRtnData struct {
 	JobId       string   `json:"jobid,omitempty"`
 	IsAnonymous bool     `json:"isanonymous"`
 	Status      string   `json:"status"`
+	Cwd         string   `json:"cwd,omitempty"`
 	CreatedAt   int64    `json:"createdat"`
 	IdleTimeout int64    `json:"idletimeout"`
 	IdleSince   int64    `json:"idlesince,omitempty"`

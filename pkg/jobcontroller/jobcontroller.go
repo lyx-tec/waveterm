@@ -1140,6 +1140,18 @@ func doReconnectJob(ctx context.Context, jobId string, rtOpts *waveobj.RuntimeOp
 			} else {
 				sendBlockJobStatusEventByJob(ctx, updatedJob)
 			}
+			// Clear session daemon references to this job so daemons can be restarted
+			sessionDaemons, qErr := wstore.DBGetAllObjsByType[*waveobj.SessionDaemon](ctx, waveobj.OType_SessionDaemon)
+			if qErr == nil {
+				for _, sd := range sessionDaemons {
+					if sd.JobId == jobId {
+						wstore.DBUpdateFn(ctx, sd.OID, func(dbSd *waveobj.SessionDaemon) {
+							dbSd.JobId = ""
+							dbSd.Status = "init"
+						})
+					}
+				}
+			}
 			telemetry.GoRecordTEventWrap(&telemetrydata.TEvent{
 				Event: "job:done",
 				Props: telemetrydata.TEventProps{

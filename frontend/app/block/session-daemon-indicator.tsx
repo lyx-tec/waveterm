@@ -10,12 +10,27 @@ import * as jotai from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { BlockEnv } from "./blockenv";
 
+function formatCreatedTime(ms: number): string {
+    const d = new Date(ms);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return "just now";
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
 interface SessionInfo {
     daemonid: string;
     name: string;
     connection: string;
     status: string;
     isanonymous: boolean;
+    createdat?: number;
     blocks?: string[];
     jobid?: string;
 }
@@ -125,10 +140,7 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
         if (targetDaemonId === daemonId) return;
         fireAndForget(async () => {
             try {
-                if (daemonId) {
-                    await RpcApi.SessionDetachCommand(TabRpcClient, { daemonid: daemonId, blockid: blockId });
-                }
-                await RpcApi.SessionAttachCommand(TabRpcClient, { daemonid: targetDaemonId, blockid: blockId });
+                await RpcApi.SessionAttachCommand(TabRpcClient, { daemonid: targetDaemonId, blockid: blockId, currentdaemonid: daemonId ?? undefined });
                 setShowPopup(false);
             } catch (e) {
                 console.log("error switching session:", e);
@@ -270,7 +282,7 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                                                     lineHeight: "18px",
                                                 }}
                                             >
-                                                {s.name || s.connection || "Unnamed session"}
+                                                {s.name || "Unnamed session"}
                                             </div>
                                             <div
                                                 style={{
@@ -278,9 +290,10 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                                                     fontSize: 11,
                                                     color: "var(--text-muted)",
                                                     marginTop: 1,
+                                                    fontFamily: "monospace",
                                                 }}
                                             >
-                                                {s.name ? s.connection : s.daemonid.slice(0, 8)}
+                                                {s.daemonid.slice(0, 8)}
                                             </div>
                                         </div>
                                     </div>
@@ -293,6 +306,11 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                                         }}
                                     >
                                         <SessionStatusPill status={displayStatus} />
+                                        <span
+                                            style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.6 }}
+                                        >
+                                            {formatCreatedTime(s.createdat)}
+                                        </span>
                                         {canClose ? (
                                             <span
                                                 onClick={(e) => {
@@ -323,10 +341,8 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                                                 Close
                                             </span>
                                         ) : (
-                                            <span
-                                                style={{ fontSize: 11, color: isActive ? "#7dd3fc" : "var(--text-muted)" }}
-                                            >
-                                                {isActive ? "Active" : `${blockCount} block${blockCount === 1 ? "" : "s"}`}
+                                            <span style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.6 }}>
+                                                {isActive ? "active" : `${blockCount} block${blockCount === 1 ? "" : "s"}`}
                                             </span>
                                         )}
                                     </div>

@@ -24,6 +24,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { Subscription } from "rxjs";
 import * as TermTypes from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
 import debug from "debug";
@@ -86,6 +87,8 @@ export class TermWrap {
     searchAddon: SearchAddon;
     serializeAddon: SerializeAddon;
     mainFileSubject: SubjectWithRef<WSFileEventData>;
+    _mainFileSub: Subscription | null = null;
+    _attachSeq: number = 0;
     loaded: boolean;
     heldData: Uint8Array[];
     handleResize_debounced: () => void;
@@ -331,8 +334,14 @@ export class TermWrap {
     }
 
     async attachToDaemon(jobId: string): Promise<void> {
+        this._attachSeq++;
+        const mySeq = this._attachSeq;
         if (this.zoneId === jobId) {
             return;
+        }
+        if (this._mainFileSub) {
+            this._mainFileSub.unsubscribe();
+            this._mainFileSub = null;
         }
         if (this.mainFileSubject) {
             this.mainFileSubject.release();
@@ -342,13 +351,19 @@ export class TermWrap {
         this.heldData = [];
         this.zoneId = jobId;
         this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
-        this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
+        this._mainFileSub = this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
         await this.loadInitialTerminalData();
     }
 
     async detachFromDaemon(): Promise<void> {
+        this._attachSeq++;
+        const mySeq = this._attachSeq;
         if (this.zoneId === this.blockId) {
             return;
+        }
+        if (this._mainFileSub) {
+            this._mainFileSub.unsubscribe();
+            this._mainFileSub = null;
         }
         if (this.mainFileSubject) {
             this.mainFileSubject.release();
@@ -358,7 +373,7 @@ export class TermWrap {
         this.heldData = [];
         this.zoneId = this.blockId;
         this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
-        this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
+        this._mainFileSub = this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
         await this.loadInitialTerminalData();
     }
 
@@ -443,7 +458,7 @@ export class TermWrap {
         }
 
         this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
-        this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
+        this._mainFileSub = this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
         console.log("[termwrap] initTerminal: zoneId=", this.getZoneId(), "blockId=", this.blockId);
 
         try {

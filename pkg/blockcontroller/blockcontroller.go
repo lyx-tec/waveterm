@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/blocklogger"
 	"github.com/wavetermdev/waveterm/pkg/filestore"
+	"github.com/wavetermdev/waveterm/pkg/jobcontroller"
 	"github.com/wavetermdev/waveterm/pkg/remote"
 	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
 	"github.com/wavetermdev/waveterm/pkg/sessiondaemon"
@@ -257,7 +258,10 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 				needsReplace = true
 			}
 		case *SessionDaemonController:
+			sdc := existing.(*SessionDaemonController)
 			if daemonId == "" || conncontroller.IsLocalConnName(connName) || conncontroller.IsWslConnName(connName) {
+				needsReplace = true
+			} else if daemonId != sdc.DaemonId {
 				needsReplace = true
 			}
 		case *TsunamiController:
@@ -330,7 +334,31 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 
 	// Check if we need to start/restart
 	status := controller.GetRuntimeStatus()
-	if status.ShellProcStatus == Status_Init {
+	if status.ShellProcStatus == Status_Running {
+		// For SessionDaemonController, verify the job is still alive.
+		// The remote job manager may have died, leaving the daemon with a stale JobId.
+		// If so, clear the JobId so Start() runs again on the next ResyncController call.
+		if sdc, ok := controller.(*SessionDaemonController); ok {
+			if daemon := sessiondaemon.Manager.Get(sdc.DaemonId); daemon != nil && daemon.JobId != "" {
+				jobStatus, jErr := jobcontroller.GetJobManagerStatus(ctx, daemon.JobId)
+				if jErr != nil || jobStatus != jobcontroller.JobManagerStatus_Running {
+					log.Printf("[sessiondaemon] resync: job %s not running (status=%s err=%v), recreating controller", daemon.JobId, jobStatus, jErr)
+					daemon.Lock.Lock()
+					daemon.JobId = ""
+					daemon.Lock.Unlock()
+					wstore.DBUpdateFn(ctx, sdc.DaemonId, func(dbSd *waveobj.SessionDaemon) {
+						dbSd.JobId = ""
+						dbSd.Status = "init"
+					})
+					stopBlockController(blockId)
+					time.Sleep(100 * time.Millisecond)
+					existing = nil
+					// Fall through to controller recreation + Start below
+				}
+			}
+		}
+	}
+	if status.ShellProcStatus == Status_Init || existing == nil {
 		// For shell/cmd, check connection status first (for non-local connections)
 		if controllerName == BlockController_Shell || controllerName == BlockController_Cmd {
 			if !conncontroller.IsLocalConnName(connName) {
