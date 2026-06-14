@@ -3,12 +3,29 @@
 
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { globalStore } from "@/app/store/jotaiStore";
 import { useWaveEnv } from "@/app/waveenv/waveenv";
 import { fireAndForget } from "@/util/util";
 import { autoUpdate, flip, FloatingPortal, offset, shift, useFloating } from "@floating-ui/react";
 import * as jotai from "jotai";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BlockEnv } from "./blockenv";
+
+interface SessionDisplayData {
+    name: string | null;
+    isanonymous: boolean;
+}
+
+const sessionDisplayAtomMap = new Map<string, jotai.PrimitiveAtom<SessionDisplayData>>();
+
+function getSessionDisplayAtom(daemonId: string): jotai.PrimitiveAtom<SessionDisplayData> {
+    let a = sessionDisplayAtomMap.get(daemonId);
+    if (!a) {
+        a = jotai.atom<SessionDisplayData>({ name: null, isanonymous: true });
+        sessionDisplayAtomMap.set(daemonId, a);
+    }
+    return a;
+}
 
 function formatCreatedTime(ms: number): string {
     const d = new Date(ms);
@@ -33,6 +50,7 @@ interface SessionInfo {
     createdat?: number;
     blocks?: string[];
     jobid?: string;
+    lastactiveat?: number;
 }
 
 interface SessionDaemonIndicatorProps {
@@ -97,6 +115,11 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
     const daemonId = jotai.useAtomValue(waveEnv.getBlockMetaKeyAtom(blockId, "session:daemonid"));
     const [showPopup, setShowPopup] = useState(false);
     const [sessions, setSessions] = useState<SessionInfo[]>([]);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editName, setEditName] = useState("");
+    const sessionDisplayAtom = daemonId ? getSessionDisplayAtom(daemonId) : null;
+    const sessionDisplay = jotai.useAtomValue(sessionDisplayAtom ?? jotai.atom<SessionDisplayData>({ name: null, isanonymous: true }));
+    const editInputRef = useRef<HTMLInputElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
     const iconRef = useRef<HTMLDivElement>(null);
     const { refs, floatingStyles } = useFloating({
@@ -120,6 +143,19 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
     }, [showPopup]);
 
     useEffect(() => {
+        if (!daemonId) return;
+        fireAndForget(async () => {
+            try {
+                const info = await RpcApi.SessionInfoCommand(TabRpcClient, { daemonid: daemonId });
+                if (info) {
+                    const atom = getSessionDisplayAtom(daemonId);
+                    globalStore.set(atom, { name: info.name || null, isanonymous: info.isanonymous });
+                }
+            } catch (_) {}
+        });
+    }, [daemonId]);
+
+    useEffect(() => {
         function handleClick(e: MouseEvent) {
             if (
                 popupRef.current &&
@@ -138,6 +174,7 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
 
     const handleAttach = (targetDaemonId: string) => {
         if (targetDaemonId === daemonId) return;
+        if (editingId) return;
         fireAndForget(async () => {
             try {
                 await RpcApi.SessionAttachCommand(TabRpcClient, { daemonid: targetDaemonId, blockid: blockId, currentdaemonid: daemonId ?? undefined });
@@ -147,6 +184,34 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
             }
         });
     };
+
+    const handleStartEdit = useCallback((daemonId: string, currentName: string) => {
+        setEditingId(daemonId);
+        setEditName(currentName || "");
+        setTimeout(() => editInputRef.current?.focus(), 0);
+    }, []);
+
+    const handleSaveEdit = useCallback(() => {
+        const id = editingId;
+        const name = editName.trim();
+        if (!id) return;
+        setEditingId(null);
+        const atom = getSessionDisplayAtom(id);
+        globalStore.set(atom, { name: name || null, isanonymous: !name });
+        fireAndForget(async () => {
+            try {
+                await RpcApi.SessionTagCommand(TabRpcClient, { daemonid: id, name: name || "Unnamed session" });
+                const list = await RpcApi.SessionListCommand(TabRpcClient, { showall: true });
+                setSessions((list ?? []) as SessionInfo[]);
+            } catch (e) {
+                console.log("error renaming session:", e);
+            }
+        });
+    }, [editingId, editName]);
+
+    const handleCancelEdit = useCallback(() => {
+        setEditingId(null);
+    }, []);
 
     if (!useTermHeader) {
         return null;
@@ -167,7 +232,7 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                 <i className={`fa-sharp fa-solid ${daemonId ? "fa-link text-sky-500" : "fa-link-slash text-muted"}`} />
                 {daemonId && (
                     <span style={{ fontSize: 11, color: "var(--text-muted)", maxWidth: 72, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {daemonId.slice(0, 8)}
+                        {sessionDisplay.isanonymous ? daemonId.slice(0, 8) : (sessionDisplay.name || daemonId.slice(0, 8))}
                     </span>
                 )}
             </div>
@@ -274,16 +339,63 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                                             />
                                         </span>
                                         <div style={{ minWidth: 0 }}>
-                                            <div
-                                                style={{
-                                                    ...truncateStyle,
-                                                    fontWeight: isActive ? 650 : 500,
-                                                    color: "var(--text-primary)",
-                                                    lineHeight: "18px",
-                                                }}
-                                            >
-                                                {s.name || "Unnamed session"}
-                                            </div>
+                                            {editingId === s.daemonid ? (
+                                                <input
+                                                    ref={editInputRef}
+                                                    type="text"
+                                                    value={editName}
+                                                    onChange={(e) => setEditName(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Enter") handleSaveEdit();
+                                                        if (e.key === "Escape") handleCancelEdit();
+                                                    }}
+                                                    onBlur={handleSaveEdit}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    style={{
+                                                        width: "100%",
+                                                        fontWeight: 650,
+                                                        color: "var(--text-primary)",
+                                                        fontSize: 14,
+                                                        lineHeight: "20px",
+                                                        background: "rgba(148, 163, 184, 0.12)",
+                                                        border: "1px solid rgba(56, 189, 248, 0.3)",
+                                                        borderRadius: 4,
+                                                        padding: "1px 6px",
+                                                        outline: "none",
+                                                    }}
+                                                />
+                                            ) : (
+                                                <div
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleStartEdit(s.daemonid, s.name);
+                                                    }}
+                                                    style={{
+                                                        ...truncateStyle,
+                                                        fontWeight: 650,
+                                                        color: "var(--text-primary)",
+                                                        lineHeight: "20px",
+                                                        fontSize: 14,
+                                                        cursor: "text",
+                                                    }}
+                                                    title="Click to rename"
+                                                >
+                                                    {s.name || "Unnamed session"}
+                                                </div>
+                                            )}
+                                            {s.connection && (
+                                                <div
+                                                    style={{
+                                                        ...truncateStyle,
+                                                        fontSize: 11,
+                                                        color: "var(--text-muted)",
+                                                        marginTop: 1,
+                                                        fontFamily: "monospace",
+                                                    }}
+                                                >
+                                                    {s.connection}
+                                                </div>
+                                            )}
                                             <div
                                                 style={{
                                                     ...truncateStyle,
@@ -293,8 +405,21 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                                                     fontFamily: "monospace",
                                                 }}
                                             >
-                                                {s.daemonid.slice(0, 8)}
+                                                Sess: {s.daemonid.slice(0, 8)}
                                             </div>
+                                            {s.jobid && (
+                                                <div
+                                                    style={{
+                                                        ...truncateStyle,
+                                                        fontSize: 10,
+                                                        color: "var(--text-muted)",
+                                                        opacity: 0.6,
+                                                        fontFamily: "monospace",
+                                                    }}
+                                                >
+                                                    Job: {s.jobid.slice(0, 8)}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                     <div

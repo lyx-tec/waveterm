@@ -3,8 +3,11 @@
 
 import { waveAIHasFocusWithin } from "@/app/aipanel/waveai-focus-utils";
 import { WaveAIModel } from "@/app/aipanel/waveai-model";
-import { getBlockComponentModel } from "@/app/store/global";
+import { getBlockComponentModel, getBlockMetaKeyAtom } from "@/app/store/global";
 import { globalStore } from "@/app/store/jotaiStore";
+import { RpcApi } from "@/app/store/wshclientapi";
+import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { fireAndForget } from "@/util/util";
 import { getLayoutModelForStaticTab } from "@/layout/index";
 import { focusedBlockId } from "@/util/focusutil";
 import { Atom, atom, type PrimitiveAtom } from "jotai";
@@ -25,6 +28,22 @@ export class FocusManager {
             const layoutModel = getLayoutModelForStaticTab();
             const lnode = get(layoutModel.focusedNode);
             return lnode?.data?.blockId;
+        });
+
+        let prevBlockId: string | null = null;
+        globalStore.sub(this.blockFocusAtom, () => {
+            const blockId = globalStore.get(this.blockFocusAtom);
+            if (blockId && blockId !== prevBlockId) {
+                prevBlockId = blockId;
+                try {
+                    const daemonId = globalStore.get(getBlockMetaKeyAtom(blockId, "session:daemonid"));
+                    if (daemonId) {
+                        fireAndForget(() => RpcApi.RecordSessionActivityCommand(TabRpcClient, { daemonid: daemonId }));
+                    }
+                } catch (_) {}
+            } else if (!blockId) {
+                prevBlockId = null;
+            }
         });
     }
 

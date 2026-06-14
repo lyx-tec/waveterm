@@ -220,6 +220,7 @@ type WshRpcInterface interface {
 	SessionDetachCommand(ctx context.Context, data CommandSessionDetachData) error
 	SessionInfoCommand(ctx context.Context, data CommandSessionInfoData) (*SessionInfoRtnData, error)
 	SessionTagCommand(ctx context.Context, data CommandSessionTagData) error
+	RecordSessionActivityCommand(ctx context.Context, data CommandRecordSessionActivityData) error
 }
 
 // for frontend
@@ -970,6 +971,10 @@ type CommandSessionTagData struct {
 	Name     string `json:"name"`
 }
 
+type CommandRecordSessionActivityData struct {
+	DaemonId string `json:"daemonid"`
+}
+
 type SessionInfoRtnData struct {
 	DaemonId    string   `json:"daemonid"`
 	Name        string   `json:"name"`
@@ -981,5 +986,6 @@ type SessionInfoRtnData struct {
 	CreatedAt   int64    `json:"createdat"`
 	IdleTimeout int64    `json:"idletimeout"`
 	IdleSince   int64    `json:"idlesince,omitempty"`
+	LastActiveAt int64   `json:"lastactiveat,omitempty"`
 	Blocks      []string `json:"blocks,omitempty"`
 }

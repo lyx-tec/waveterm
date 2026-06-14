@@ -368,7 +368,8 @@ type SessionDaemon struct {
 	Cwd         string      `json:"cwd,omitempty"`
 	CreatedAt   int64       `json:"createdat,omitempty"`
 	IdleTimeout int64       `json:"idletimeout,omitempty"`
-	IdleSince   int64       `json:"idlesince,omitempty"` // ms timestamp when last block detached (0 = has attached blocks)
+	IdleSince   int64       `json:"idlesince,omitempty"`   // ms timestamp when last block detached (0 = has attached blocks)
+	LastActiveAt int64      `json:"lastactiveat,omitempty"` // ms timestamp when a block last gained focus in this session
 	Meta        MetaMapType `json:"meta"`
 }
 

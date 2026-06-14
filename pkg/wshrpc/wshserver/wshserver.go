@@ -1647,6 +1647,11 @@ func (ws *WshServer) SessionListCommand(ctx context.Context, data wshrpc.Command
 		rtn = append(rtn, *info)
 	}
 	sort.Slice(rtn, func(i, j int) bool {
+		ai := rtn[i].LastActiveAt
+		aj := rtn[j].LastActiveAt
+		if ai != aj {
+			return ai > aj
+		}
 		return rtn[i].CreatedAt > rtn[j].CreatedAt
 	})
 	return rtn, nil
@@ -1751,23 +1756,34 @@ func (ws *WshServer) SessionTagCommand(ctx context.Context, data wshrpc.CommandS
 	return nil
 }
 
+func (ws *WshServer) RecordSessionActivityCommand(ctx context.Context, data wshrpc.CommandRecordSessionActivityData) error {
+	err := wstore.DBUpdateFn(ctx, data.DaemonId, func(sd *waveobj.SessionDaemon) {
+		sd.LastActiveAt = time.Now().UnixMilli()
+	})
+	if err != nil {
+		return fmt.Errorf("record session activity: %w", err)
+	}
+	return nil
+}
+
 func buildSessionInfoRtnData(ctx context.Context, dbDaemon *waveobj.SessionDaemon) (*wshrpc.SessionInfoRtnData, error) {
 	if dbDaemon == nil {
 		return nil, fmt.Errorf("session daemon is nil")
 	}
 	blocks := sessiondaemon.Manager.GetBlocksForDaemon(dbDaemon.OID)
 	return &wshrpc.SessionInfoRtnData{
-		DaemonId:    dbDaemon.OID,
-		Name:        dbDaemon.Name,
-		Connection:  dbDaemon.Connection,
-		JobId:       dbDaemon.JobId,
-		IsAnonymous: dbDaemon.IsAnonymous,
-		Status:      dbDaemon.Status,
-		Cwd:         dbDaemon.Cwd,
-		CreatedAt:   dbDaemon.CreatedAt,
-		IdleTimeout: dbDaemon.IdleTimeout,
-		IdleSince:   dbDaemon.IdleSince,
-		Blocks:      blocks,
+		DaemonId:     dbDaemon.OID,
+		Name:         dbDaemon.Name,
+		Connection:   dbDaemon.Connection,
+		JobId:        dbDaemon.JobId,
+		IsAnonymous:  dbDaemon.IsAnonymous,
+		Status:       dbDaemon.Status,
+		Cwd:          dbDaemon.Cwd,
+		CreatedAt:    dbDaemon.CreatedAt,
+		IdleTimeout:  dbDaemon.IdleTimeout,
+		IdleSince:    dbDaemon.IdleSince,
+		LastActiveAt: dbDaemon.LastActiveAt,
+		Blocks:       blocks,
 	}, nil
 }
 

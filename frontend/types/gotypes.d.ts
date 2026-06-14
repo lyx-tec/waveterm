@@ -528,6 +528,11 @@ declare global {
         modts?: number;
     };
 
+    // wshrpc.CommandRecordSessionActivityData
+    type CommandRecordSessionActivityData = {
+        daemonid: string;
+    };
+
     // wshrpc.CommandRemoteDisconnectFromJobManagerData
     type CommandRemoteDisconnectFromJobManagerData = {
         jobid: string;
@@ -1427,6 +1432,7 @@ declare global {
         createdat?: number;
         idletimeout?: number;
         idlesince?: number;
+        lastactiveat?: number;
     };
 
     // wshrpc.SessionInfoRtnData
@@ -1441,6 +1447,7 @@ declare global {
         createdat: number;
         idletimeout: number;
         idlesince?: number;
+        lastactiveat?: number;
         blocks?: string[];
     };
 

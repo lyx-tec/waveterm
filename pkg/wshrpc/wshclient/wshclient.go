@@ -670,6 +670,12 @@ func ReadAppFileCommand(w *wshutil.WshRpc, data wshrpc.CommandReadAppFileData, o
 	return resp, err
 }
 
+// command "recordsessionactivity", wshserver.RecordSessionActivityCommand
+func RecordSessionActivityCommand(w *wshutil.WshRpc, data wshrpc.CommandRecordSessionActivityData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "recordsessionactivity", data, opts)
+	return err
+}
+
 // command "recordtevent", wshserver.RecordTEventCommand
 func RecordTEventCommand(w *wshutil.WshRpc, data telemetrydata.TEvent, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "recordtevent", data, opts)

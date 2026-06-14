@@ -672,6 +672,12 @@ export class RpcApiType {
         return client.wshRpcCall("readappfile", data, opts);
     }
 
+    // command "recordsessionactivity" [call]
+    RecordSessionActivityCommand(client: WshClient, data: CommandRecordSessionActivityData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "recordsessionactivity", data, opts);
+        return client.wshRpcCall("recordsessionactivity", data, opts);
+    }
+
     // command "recordtevent" [call]
     RecordTEventCommand(client: WshClient, data: TEvent, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "recordtevent", data, opts);
