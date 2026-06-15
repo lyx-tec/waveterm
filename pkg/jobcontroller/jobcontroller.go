@@ -230,7 +230,7 @@ func SendBlockJobStatusEvent(ctx context.Context, blockId string) {
 }
 
 func sendBlockJobStatusEventByJob(ctx context.Context, job *waveobj.Job) {
-	if job == nil || job.AttachedBlockId == "" {
+	if job == nil || job.AttachedBlockId == "" || strings.HasPrefix(job.AttachedBlockId, "daemon:") {
 		return
 	}
 	SendBlockJobStatusEvent(ctx, job.AttachedBlockId)
@@ -813,7 +813,7 @@ func handleAppendJobFile(ctx context.Context, jobId string, fileName string, dat
 	if err != nil {
 		return fmt.Errorf("error getting job: %w", err)
 	}
-	if job != nil && job.AttachedBlockId != "" {
+	if job != nil && job.AttachedBlockId != "" && !strings.HasPrefix(job.AttachedBlockId, "daemon:") {
 		err = doWFSAppend(ctx, waveobj.MakeORef(waveobj.OType_Block, job.AttachedBlockId), fileName, data)
 		if err != nil {
 			return fmt.Errorf("error appending to block file: %w", err)
@@ -1511,7 +1511,7 @@ func SendInput(ctx context.Context, data wshrpc.CommandJobInputData) error {
 }
 
 func resetTerminalState(logCtx context.Context, blockId string) {
-	if blockId == "" {
+	if blockId == "" || strings.HasPrefix(blockId, "daemon:") {
 		return
 	}
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
@@ -1561,7 +1561,7 @@ func writeSessionSeparatorToTerminal(blockId string, termWidth int) {
 
 // msg should not have a terminating newline
 func writeMutedMessageToTerminal(blockId string, msg string) {
-	if blockId == "" {
+	if blockId == "" || strings.HasPrefix(blockId, "daemon:") {
 		return
 	}
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)

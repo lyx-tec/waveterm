@@ -176,6 +176,11 @@ func (sdc *SessionDaemonController) startNewJob(ctx context.Context, blockMeta w
 	if err != nil {
 		return "", fmt.Errorf("failed to start remote shell job: %w", err)
 	}
+
+	wstore.DBUpdateFn(ctx, jobId, func(job *waveobj.Job) {
+		job.AttachedBlockId = "daemon:" + sdc.DaemonId
+	})
+
 	return jobId, nil
 }
 
