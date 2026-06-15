@@ -3,14 +3,11 @@ package blockcontroller
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"log"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/wavetermdev/waveterm/pkg/filestore"
-	"github.com/wavetermdev/waveterm/pkg/jobcontroller"
 	"github.com/wavetermdev/waveterm/pkg/remote"
 	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
 	"github.com/wavetermdev/waveterm/pkg/sessiondaemon"
@@ -77,32 +74,36 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 		return fmt.Errorf("error getting session daemon: %w", err)
 	}
 
+	if dbDaemon.Status == sessiondaemon.Status_Done {
+		return fmt.Errorf("remote job manager has exited, restart or delete the session")
+	}
+	if dbDaemon.Status == sessiondaemon.Status_Disconnected {
+		return fmt.Errorf("daemon is disconnected, waiting for connection to recover")
+	}
+
 	if dbDaemon.JobId != "" {
-		status, err := jobcontroller.GetJobManagerStatus(ctx, dbDaemon.JobId)
-		log.Printf("[sessiondaemon] start: existing job=%s status=%s err=%v", dbDaemon.JobId, status, err)
-		if err == nil && status == jobcontroller.JobManagerStatus_Running {
-			log.Printf("[sessiondaemon] start: reconnecting to existing job %s", dbDaemon.JobId)
-			err = jobcontroller.ReconnectJob(ctx, dbDaemon.JobId, rtOpts)
-			if err != nil {
-				log.Printf("[sessiondaemon] start: reconnect failed job=%s err=%v, starting new job", dbDaemon.JobId, err)
-			} else {
-				log.Printf("[sessiondaemon] start: reconnect ok job=%s", dbDaemon.JobId)
-				sdc.incrementVersion()
-				sdc.sendControllerStatus()
-				return nil
-			}
+		log.Printf("[sessiondaemon] start: attempting reconnect to job=%s status=%s", dbDaemon.JobId, dbDaemon.Status)
+		err = daemon.Reconnect(ctx, dbDaemon, rtOpts)
+		if err == nil {
+			log.Printf("[sessiondaemon] start: reconnect ok block=%s job=%s", sdc.BlockId, dbDaemon.JobId)
+			sdc.incrementVersion()
+			sdc.sendControllerStatus()
+			return nil
 		}
-	}
+		log.Printf("[sessiondaemon] start: reconnect failed block=%s job=%s err=%v", sdc.BlockId, dbDaemon.JobId, err)
 
-	// Terminate old job if it exists (crashed or network issue)
-	if dbDaemon.JobId != "" {
-		log.Printf("[sessiondaemon] start: terminating old job %s", dbDaemon.JobId)
-		jobcontroller.TerminateAndDetachJob(ctx, dbDaemon.JobId)
-	}
-
-	fsErr := filestore.WFS.MakeFile(ctx, sdc.BlockId, wavebase.BlockFile_Term, nil, wshrpc.FileOpts{MaxSize: DefaultTermMaxFileSize, Circular: true})
-	if fsErr != nil && fsErr != fs.ErrExist {
-		return fmt.Errorf("error creating block term file: %w", fsErr)
+		dbDaemon, dbErr := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, sdc.DaemonId)
+		if dbErr != nil {
+			return fmt.Errorf("error reading daemon after reconnect failure: %w", dbErr)
+		}
+		switch dbDaemon.Status {
+		case sessiondaemon.Status_Disconnected:
+			return fmt.Errorf("daemon is disconnected, waiting for connection to recover")
+		case sessiondaemon.Status_Done:
+			return fmt.Errorf("remote job manager has exited, restart or delete the session")
+		default:
+			return fmt.Errorf("unexpected daemon status %q after reconnect failure", dbDaemon.Status)
+		}
 	}
 
 	log.Printf("[sessiondaemon] start: starting new job block=%s", sdc.BlockId)
@@ -253,7 +254,7 @@ func autoCreateSessionDaemon(ctx context.Context, blockId string, blockMeta wave
 		Name:        "",
 		Connection:  connName,
 		IsAnonymous: true,
-		Status:      "init",
+		Status:      sessiondaemon.Status_Init,
 		CreatedAt:   time.Now().UnixMilli(),
 		IdleTimeout: sessiondaemon.DefaultAnonymousIdleTimeout,
 	}

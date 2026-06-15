@@ -1587,7 +1587,7 @@ func (ws *WshServer) SessionCreateCommand(ctx context.Context, data wshrpc.Comma
 		Name:        data.Name,
 		Connection:  data.Connection,
 		IsAnonymous: data.Name == "",
-		Status:      "init",
+		Status:      sessiondaemon.Status_Init,
 		CreatedAt:   time.Now().UnixMilli(),
 		IdleTimeout: data.IdleTimeout,
 	}

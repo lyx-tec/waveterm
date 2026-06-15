@@ -17,9 +17,17 @@ import (
 )
 
 const (
-	DefaultAnonymousIdleTimeout = 600 // 10min
+	DefaultAnonymousIdleTimeout = 600   // 10min
 	DefaultNamedIdleTimeout     = 86400 // 24h
-	IdleCheckInterval           = 60    // 检查间隔（秒）
+	IdleCheckInterval           = 60    // 60s
+	DoneReapTimeout             = 300   // 5min for done daemons with no blocks
+)
+
+const (
+	Status_Init         = "init"
+	Status_Running      = "running"
+	Status_Disconnected = "disconnected"
+	Status_Done         = "done"
 )
 
 type SessionDaemon struct {
@@ -68,7 +76,7 @@ func (sd *SessionDaemon) SetJobId(ctx context.Context, dbDaemon *waveobj.Session
 
 	err := wstore.DBUpdateFn(ctx, dbDaemon.OID, func(sdDb *waveobj.SessionDaemon) {
 		sdDb.JobId = jobId
-		sdDb.Status = "running"
+		sdDb.Status = Status_Running
 	})
 	if err != nil {
 		log.Printf("[sessiondaemon:%s] warning: failed to update jobid in db: %v", sd.DaemonId, err)
@@ -83,7 +91,34 @@ func (sd *SessionDaemon) Reconnect(ctx context.Context, dbDaemon *waveobj.Sessio
 	sd.Lock.Lock()
 	sd.JobId = dbDaemon.JobId
 	sd.Lock.Unlock()
-	return jobcontroller.ReconnectJob(ctx, dbDaemon.JobId, rtOpts)
+
+	err := jobcontroller.ReconnectJob(ctx, dbDaemon.JobId, rtOpts)
+	if err != nil {
+		var jobGone bool
+		wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbSd *waveobj.SessionDaemon) {
+			if dbSd.JobId == "" {
+				dbSd.Status = Status_Done
+				jobGone = true
+			} else {
+				dbSd.Status = Status_Disconnected
+			}
+		})
+		if jobGone {
+			sd.Lock.Lock()
+			sd.JobId = ""
+			sd.Lock.Unlock()
+			log.Printf("[sessiondaemon:%s] reconnect: job manager gone, status -> done", sd.DaemonId)
+			return fmt.Errorf("job manager has exited")
+		}
+		log.Printf("[sessiondaemon:%s] reconnect: failed, status -> disconnected: %v", sd.DaemonId, err)
+		return fmt.Errorf("reconnect failed: %w", err)
+	}
+
+	wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbSd *waveobj.SessionDaemon) {
+		dbSd.Status = Status_Running
+	})
+	log.Printf("[sessiondaemon:%s] reconnect: success, status -> running", sd.DaemonId)
+	return nil
 }
 
 func (sd *SessionDaemon) Stop(ctx context.Context) {
@@ -235,18 +270,31 @@ func (sd *SessionDaemonManager) InitFromDB(ctx context.Context) error {
 	}
 
 	for _, dbDaemon := range daemons {
-		if dbDaemon.Status == "running" || dbDaemon.Status == "disconnected" {
-			daemon, err := sd.GetOrCreate(ctx, dbDaemon)
-			if err != nil {
-				log.Printf("[sessiondaemon] warning: failed to load daemon %s: %v", dbDaemon.OID, err)
-				continue
-			}
+		daemon, err := sd.GetOrCreate(ctx, dbDaemon)
+		if err != nil {
+			log.Printf("[sessiondaemon] warning: failed to load daemon %s: %v", dbDaemon.OID, err)
+			continue
+		}
+
+		switch dbDaemon.Status {
+		case Status_Running, Status_Disconnected:
 			err = daemon.Reconnect(ctx, dbDaemon, nil)
 			if err != nil {
 				log.Printf("[sessiondaemon:%s] reconnect failed: %v", dbDaemon.OID, err)
 			}
+		case Status_Done:
+			log.Printf("[sessiondaemon:%s] loaded done daemon", dbDaemon.OID)
+		case Status_Init:
+			log.Printf("[sessiondaemon:%s] loaded init daemon", dbDaemon.OID)
+		default:
+			log.Printf("[sessiondaemon:%s] unknown status %q, treating as init", dbDaemon.OID, dbDaemon.Status)
+			wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbSd *waveobj.SessionDaemon) {
+				dbSd.Status = Status_Init
+			})
 		}
 	}
+
+	log.Printf("[sessiondaemon] InitFromDB complete: %d daemons loaded", len(sd.Daemons))
 	return nil
 }
 
@@ -301,45 +349,76 @@ func (sd *SessionDaemonManager) reapIdleDaemons(ctx context.Context) {
 	}
 
 	for _, dbDaemon := range allDaemons {
-		if dbDaemon.Status != "running" {
-			continue
-		}
-
 		sd.Lock.Lock()
 		memDaemon, hasMem := sd.Daemons[dbDaemon.OID]
 		sd.Lock.Unlock()
 
-		if hasMem && memDaemon.HasAttachedBlocks() {
-			// Verify all attached blocks are still alive. If a block
-			// was deleted without proper detach, clean it up here
-			// to prevent the daemon from holding onto a dead block forever.
-			sd.cleanupDeadBlocks(ctx, dbDaemon.OID, memDaemon)
-			if memDaemon.HasAttachedBlocks() {
-				continue
-			}
+		switch dbDaemon.Status {
+		case Status_Running:
+			sd.reapRunning(ctx, dbDaemon, memDaemon, hasMem)
+		case Status_Done:
+			sd.reapDone(ctx, dbDaemon, memDaemon, hasMem)
 		}
-
-		if dbDaemon.IdleTimeout <= 0 {
-			continue
-		}
-
-		// IdleSince is a countdown in seconds (set to IdleTimeout when idle starts).
-		// Decrement inside the DB update closure to avoid race with concurrent AttachBlock
-		// which resets IdleSince to 0.
-		var newRemaining int64
-		wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbD *waveobj.SessionDaemon) {
-			dbD.IdleSince -= IdleCheckInterval
-			newRemaining = dbD.IdleSince
-		})
-		if newRemaining > 0 {
-			continue
-		}
-
-		log.Printf("[sessiondaemon:%s] idle timeout reached, terminating", dbDaemon.OID)
-		if hasMem {
-			memDaemon.Stop(ctx)
-			sd.Remove(dbDaemon.OID)
-		}
-		wstore.DBDelete(ctx, waveobj.OType_SessionDaemon, dbDaemon.OID)
 	}
+}
+
+func (sd *SessionDaemonManager) reapRunning(ctx context.Context, dbDaemon *waveobj.SessionDaemon, memDaemon *SessionDaemon, hasMem bool) {
+	if hasMem && memDaemon.HasAttachedBlocks() {
+		sd.cleanupDeadBlocks(ctx, dbDaemon.OID, memDaemon)
+		if memDaemon.HasAttachedBlocks() {
+			return
+		}
+	}
+
+	if dbDaemon.IdleTimeout <= 0 {
+		return
+	}
+
+	var newRemaining int64
+	wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbD *waveobj.SessionDaemon) {
+		dbD.IdleSince -= IdleCheckInterval
+		newRemaining = dbD.IdleSince
+	})
+	if newRemaining > 0 {
+		return
+	}
+
+	log.Printf("[sessiondaemon:%s] idle timeout reached, terminating", dbDaemon.OID)
+	if hasMem {
+		memDaemon.Stop(ctx)
+		sd.Remove(dbDaemon.OID)
+	}
+	wstore.DBDelete(ctx, waveobj.OType_SessionDaemon, dbDaemon.OID)
+}
+
+func (sd *SessionDaemonManager) reapDone(ctx context.Context, dbDaemon *waveobj.SessionDaemon, memDaemon *SessionDaemon, hasMem bool) {
+	if hasMem && memDaemon.HasAttachedBlocks() {
+		return
+	}
+
+	if dbDaemon.IdleTimeout <= 0 {
+		return
+	}
+
+	if dbDaemon.IdleSince <= 0 {
+		wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbD *waveobj.SessionDaemon) {
+			dbD.IdleSince = DoneReapTimeout
+		})
+		return
+	}
+
+	var newRemaining int64
+	wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbD *waveobj.SessionDaemon) {
+		dbD.IdleSince -= IdleCheckInterval
+		newRemaining = dbD.IdleSince
+	})
+	if newRemaining > 0 {
+		return
+	}
+
+	log.Printf("[sessiondaemon:%s] done daemon reaped", dbDaemon.OID)
+	if hasMem {
+		sd.Remove(dbDaemon.OID)
+	}
+	wstore.DBDelete(ctx, waveobj.OType_SessionDaemon, dbDaemon.OID)
 }

@@ -216,7 +216,7 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 	// Validate existing daemon: if stale (done/not found), clear it
 	if daemonId != "" && controllerName == BlockController_Shell {
 		dbDaemon, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, daemonId)
-		if err != nil || dbDaemon.Status == "done" {
+		if err != nil || dbDaemon.Status == sessiondaemon.Status_Done {
 			log.Printf("[sessiondaemon] stale daemon=%s block=%s status=%s err=%v, clearing", daemonId, blockId, func() string { if dbDaemon != nil { return dbDaemon.Status }; return "db_load_error" }(), err)
 			if existing != nil {
 				DestroyBlockController(blockId)
@@ -324,18 +324,18 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 			if daemon := sessiondaemon.Manager.Get(sdc.DaemonId); daemon != nil && daemon.JobId != "" {
 				jobStatus, jErr := jobcontroller.GetJobManagerStatus(ctx, daemon.JobId)
 				if jErr != nil || jobStatus != jobcontroller.JobManagerStatus_Running {
-					log.Printf("[sessiondaemon] resync: job %s not running (status=%s err=%v), recreating controller", daemon.JobId, jobStatus, jErr)
+					log.Printf("[sessiondaemon] resync: job %s not running (status=%s err=%v), marking done", daemon.JobId, jobStatus, jErr)
 					daemon.Lock.Lock()
 					daemon.JobId = ""
 					daemon.Lock.Unlock()
 					wstore.DBUpdateFn(ctx, sdc.DaemonId, func(dbSd *waveobj.SessionDaemon) {
 						dbSd.JobId = ""
-						dbSd.Status = "init"
+						dbSd.Status = sessiondaemon.Status_Done
 					})
-					stopBlockController(blockId)
-					time.Sleep(100 * time.Millisecond)
-					existing = nil
-					// Fall through to controller recreation + Start below
+				stopBlockController(blockId)
+				time.Sleep(100 * time.Millisecond)
+				existing = nil
+				// Fall through to controller recreation + Start below
 				}
 			}
 		}
