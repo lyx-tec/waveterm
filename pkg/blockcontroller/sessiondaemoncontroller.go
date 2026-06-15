@@ -3,11 +3,13 @@ package blockcontroller
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/wavetermdev/waveterm/pkg/filestore"
 	"github.com/wavetermdev/waveterm/pkg/remote"
 	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
 	"github.com/wavetermdev/waveterm/pkg/sessiondaemon"
@@ -107,6 +109,10 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 	}
 
 	log.Printf("[sessiondaemon] start: starting new job block=%s", sdc.BlockId)
+	fsErr := filestore.WFS.MakeFile(ctx, sdc.BlockId, wavebase.BlockFile_Term, nil, wshrpc.FileOpts{MaxSize: DefaultTermMaxFileSize, Circular: true})
+	if fsErr != nil && fsErr != fs.ErrExist {
+		return fmt.Errorf("error creating block term file: %w", fsErr)
+	}
 	jobId, err := sdc.startNewJob(ctx, blockMeta, rtOpts)
 	if err != nil {
 		log.Printf("[sessiondaemon] start: new job failed block=%s err=%v", sdc.BlockId, err)
