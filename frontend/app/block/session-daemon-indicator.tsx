@@ -477,16 +477,32 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                                                         handleStartEdit(s.daemonid, s.name);
                                                     }}
                                                     style={{
-                                                        ...truncateStyle,
-                                                        fontWeight: 650,
-                                                        color: "var(--text-primary)",
-                                                        lineHeight: "20px",
-                                                        fontSize: 14,
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        gap: 6,
                                                         cursor: "text",
                                                     }}
                                                     title="Click to rename"
                                                 >
-                                                    {s.name || "Unnamed session"}
+                                                    <span
+                                                        style={{
+                                                            ...truncateStyle,
+                                                            fontWeight: 650,
+                                                            color: "var(--text-primary)",
+                                                            fontSize: 14,
+                                                        }}
+                                                    >
+                                                        {s.name || "Unnamed session"}
+                                                    </span>
+                                                    <i
+                                                        className="fa-sharp fa-solid fa-pencil"
+                                                        style={{
+                                                            fontSize: 9,
+                                                            color: "var(--text-muted)",
+                                                            opacity: 0.45,
+                                                            flexShrink: 0,
+                                                        }}
+                                                    />
                                                 </div>
                                             )}
                                             {s.connection && (
