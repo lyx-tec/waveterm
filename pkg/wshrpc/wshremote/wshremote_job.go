@@ -104,6 +104,8 @@ func (impl *ServerImpl) connectToJobManager(ctx context.Context, jobId string, m
 	}
 	impl.addJobManagerConnection(jobConn)
 
+	impl.removeDisconnectEntry(jobId)
+
 	log.Printf("connectToJobManager: successfully connected and authenticated\n")
 	return jobRouteId, cleanup, nil
 }
@@ -117,10 +119,15 @@ func (impl *ServerImpl) addJobManagerConnection(conn *JobManagerConnection) {
 
 func (impl *ServerImpl) removeJobManagerConnection(jobId string) {
 	impl.Lock.Lock()
-	defer impl.Lock.Unlock()
-	if _, exists := impl.JobManagerMap[jobId]; exists {
+	conn, exists := impl.JobManagerMap[jobId]
+	if exists {
 		delete(impl.JobManagerMap, jobId)
 		log.Printf("removeJobManagerConnection: removed job manager connection for jobid=%s\n", jobId)
+	}
+	impl.Lock.Unlock()
+
+	if conn != nil && conn.Pid > 0 {
+		impl.addDisconnectEntry(jobId, conn.Pid, conn.StartTs, conn.RemoteIdleTimeoutSeconds)
 	}
 }
 
@@ -254,6 +261,17 @@ func (impl *ServerImpl) RemoteStartJobCommand(ctx context.Context, data wshrpc.C
 		return nil, err
 	}
 
+	impl.Lock.Lock()
+	if jobConn := impl.JobManagerMap[data.JobId]; jobConn != nil {
+		jobConn.Pid = cmd.Process.Pid
+		jobConn.StartTs = time.Now().UnixMilli()
+		jobConn.RemoteIdleTimeoutSeconds = data.RemoteIdleTimeoutSeconds
+		if jobConn.RemoteIdleTimeoutSeconds <= 0 {
+			jobConn.RemoteIdleTimeoutSeconds = 172800
+		}
+	}
+	impl.Lock.Unlock()
+
 	combinedEnv := make(map[string]string)
 	for k, v := range impl.InitialEnv {
 		combinedEnv[k] = v
@@ -317,6 +335,17 @@ func (impl *ServerImpl) RemoteReconnectToJobManagerCommand(ctx context.Context, 
 		}, nil
 	}
 
+	impl.Lock.Lock()
+	if jobConn := impl.JobManagerMap[data.JobId]; jobConn != nil {
+		jobConn.Pid = data.JobManagerPid
+		jobConn.StartTs = data.JobManagerStartTs
+		jobConn.RemoteIdleTimeoutSeconds = data.RemoteIdleTimeoutSeconds
+		if jobConn.RemoteIdleTimeoutSeconds <= 0 {
+			jobConn.RemoteIdleTimeoutSeconds = 172800
+		}
+	}
+	impl.Lock.Unlock()
+
 	log.Printf("RemoteReconnectToJobManagerCommand: successfully reconnected to job manager\n")
 	return &wshrpc.CommandRemoteReconnectToJobManagerRtnData{
 		Success: true,
@@ -356,4 +385,78 @@ func (impl *ServerImpl) RemoteTerminateJobManagerCommand(ctx context.Context, da
 		log.Printf("RemoteTerminateJobManagerCommand: sent SIGTERM to job manager process, jobid=%s, pid=%d\n", data.JobId, data.JobManagerPid)
 	}
 	return nil
+}
+
+const disconnectCheckInterval = 60 // seconds
+
+var disconnectManagerStarted sync.Once
+
+func (impl *ServerImpl) ensureDisconnectManager() {
+	disconnectManagerStarted.Do(func() {
+		go impl.runDisconnectManager()
+	})
+}
+
+func (impl *ServerImpl) runDisconnectManager() {
+	ticker := time.NewTicker(disconnectCheckInterval * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		impl.reapDisconnectedJobs()
+	}
+}
+
+func (impl *ServerImpl) reapDisconnectedJobs() {
+	impl.disconnectMu.Lock()
+	now := time.Now()
+	var expired []*disconnectEntry
+	var remaining []*disconnectEntry
+	for _, entry := range impl.disconnectDeadlines {
+		if now.After(entry.Deadline) {
+			expired = append(expired, entry)
+		} else {
+			remaining = append(remaining, entry)
+		}
+	}
+	impl.disconnectDeadlines = make(map[string]*disconnectEntry)
+	for _, entry := range remaining {
+		impl.disconnectDeadlines[entry.JobId] = entry
+	}
+	impl.disconnectMu.Unlock()
+
+	for _, entry := range expired {
+		proc, err := isProcessRunning(entry.Pid, entry.StartTs)
+		if err != nil {
+			log.Printf("disconnectManager: error checking process for job=%s pid=%d: %v", entry.JobId, entry.Pid, err)
+			continue
+		}
+		if proc != nil {
+			log.Printf("disconnectManager: terminating orphaned job=%s pid=%d", entry.JobId, entry.Pid)
+			err = proc.SendSignal(syscall.SIGTERM)
+			if err != nil {
+				log.Printf("disconnectManager: error sending SIGTERM to job=%s pid=%d: %v", entry.JobId, entry.Pid, err)
+			}
+		}
+	}
+}
+
+func (impl *ServerImpl) addDisconnectEntry(jobId string, pid int, startTs int64, timeoutSeconds int64) {
+	impl.ensureDisconnectManager()
+	impl.disconnectMu.Lock()
+	defer impl.disconnectMu.Unlock()
+	impl.disconnectDeadlines[jobId] = &disconnectEntry{
+		JobId:    jobId,
+		Pid:      pid,
+		StartTs:  startTs,
+		Deadline: time.Now().Add(time.Duration(timeoutSeconds) * time.Second),
+	}
+	log.Printf("disconnectManager: added entry for job=%s deadline=%v", jobId, impl.disconnectDeadlines[jobId].Deadline)
+}
+
+func (impl *ServerImpl) removeDisconnectEntry(jobId string) {
+	impl.disconnectMu.Lock()
+	defer impl.disconnectMu.Unlock()
+	if _, exists := impl.disconnectDeadlines[jobId]; exists {
+		delete(impl.disconnectDeadlines, jobId)
+		log.Printf("disconnectManager: removed entry for job=%s", jobId)
+	}
 }

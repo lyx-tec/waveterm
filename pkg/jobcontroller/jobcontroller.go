@@ -40,6 +40,7 @@ import (
 )
 
 const DefaultTimeout = 2 * time.Second
+const DefaultRemoteIdleTimeoutSeconds = 172800 // 2 days
 
 const (
 	JobManagerStatus_Init    = "init"
@@ -696,16 +697,17 @@ func StartJob(ctx context.Context, params StartJobParams) (string, error) {
 	publicKeyBase64 := base64.StdEncoding.EncodeToString(publicKey)
 	jobEnv := envutil.CopyAndAddToEnvMap(params.Env, "WAVETERM_JOBID", jobId)
 	startJobData := wshrpc.CommandRemoteStartJobData{
-		Cmd:                params.Cmd,
-		Args:               params.Args,
-		Env:                jobEnv,
-		TermSize:           *params.TermSize,
-		StreamMeta:         streamMeta,
-		JobAuthToken:       jobAuthToken,
-		JobId:              jobId,
-		MainServerJwtToken: jobAccessToken,
-		ClientId:           clientId,
-		PublicKeyBase64:    publicKeyBase64,
+		Cmd:                      params.Cmd,
+		Args:                     params.Args,
+		Env:                      jobEnv,
+		TermSize:                 *params.TermSize,
+		StreamMeta:               streamMeta,
+		JobAuthToken:             jobAuthToken,
+		JobId:                    jobId,
+		MainServerJwtToken:       jobAccessToken,
+		ClientId:                 clientId,
+		PublicKeyBase64:          publicKeyBase64,
+		RemoteIdleTimeoutSeconds: DefaultRemoteIdleTimeoutSeconds,
 	}
 
 	rpcOpts := &wshrpc.RpcOpts{
@@ -1112,11 +1114,12 @@ func doReconnectJob(ctx context.Context, jobId string, rtOpts *waveobj.RuntimeOp
 	}
 
 	reconnectData := wshrpc.CommandRemoteReconnectToJobManagerData{
-		JobId:              jobId,
-		JobAuthToken:       job.JobAuthToken,
-		MainServerJwtToken: jobAccessToken,
-		JobManagerPid:      job.JobManagerPid,
-		JobManagerStartTs:  job.JobManagerStartTs,
+		JobId:                    jobId,
+		JobAuthToken:             job.JobAuthToken,
+		MainServerJwtToken:       jobAccessToken,
+		JobManagerPid:            job.JobManagerPid,
+		JobManagerStartTs:        job.JobManagerStartTs,
+		RemoteIdleTimeoutSeconds: DefaultRemoteIdleTimeoutSeconds,
 	}
 
 	rpcOpts := &wshrpc.RpcOpts{

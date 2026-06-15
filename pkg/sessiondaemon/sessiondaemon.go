@@ -313,6 +313,7 @@ func (sd *SessionDaemonManager) StartIdleReaper(ctx context.Context) {
 				return
 			case <-ticker.C:
 				sd.reapIdleDaemons(ctx)
+				sd.verifyConsistency(ctx)
 			}
 		}
 	}()
@@ -430,4 +431,39 @@ func (sd *SessionDaemonManager) reapDone(ctx context.Context, dbDaemon *waveobj.
 		sd.Remove(dbDaemon.OID)
 	}
 	wstore.DBDelete(ctx, waveobj.OType_SessionDaemon, dbDaemon.OID)
+}
+
+func (sd *SessionDaemonManager) verifyConsistency(ctx context.Context) {
+	daemons, err := wstore.DBGetAllObjsByType[*waveobj.SessionDaemon](ctx, waveobj.OType_SessionDaemon)
+	if err != nil {
+		return
+	}
+
+	dbIds := make(map[string]bool)
+	for _, dbDaemon := range daemons {
+		dbIds[dbDaemon.OID] = true
+	}
+
+	sd.Lock.Lock()
+	defer sd.Lock.Unlock()
+
+	for id := range sd.Daemons {
+		if !dbIds[id] {
+			log.Printf("[sessiondaemon] consistency: daemon %s in memory but not in DB, removing from memory", id)
+			delete(sd.Daemons, id)
+		}
+	}
+
+	for _, dbDaemon := range daemons {
+		if _, exists := sd.Daemons[dbDaemon.OID]; !exists {
+			log.Printf("[sessiondaemon] consistency: daemon %s in DB but not in memory, loading", dbDaemon.OID)
+			sd.Daemons[dbDaemon.OID] = &SessionDaemon{
+				DaemonId:       dbDaemon.OID,
+				Name:           dbDaemon.Name,
+				JobId:          dbDaemon.JobId,
+				InputSessionId: uuid.New().String(),
+				Blocks:         make(map[string]bool),
+			}
+		}
+	}
 }

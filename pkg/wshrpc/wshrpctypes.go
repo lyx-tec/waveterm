@@ -743,24 +743,26 @@ type CommandStartJobData struct {
 }
 
 type CommandRemoteStartJobData struct {
-	Cmd                string            `json:"cmd"`
-	Args               []string          `json:"args"`
-	Env                map[string]string `json:"env"`
-	TermSize           waveobj.TermSize  `json:"termsize"`
-	StreamMeta         *StreamMeta       `json:"streammeta,omitempty"`
-	JobAuthToken       string            `json:"jobauthtoken"`
-	JobId              string            `json:"jobid"`
-	MainServerJwtToken string            `json:"mainserverjwttoken"`
-	ClientId           string            `json:"clientid"`
-	PublicKeyBase64    string            `json:"publickeybase64"`
+	Cmd                      string            `json:"cmd"`
+	Args                     []string          `json:"args"`
+	Env                      map[string]string `json:"env"`
+	TermSize                 waveobj.TermSize  `json:"termsize"`
+	StreamMeta               *StreamMeta       `json:"streammeta,omitempty"`
+	JobAuthToken             string            `json:"jobauthtoken"`
+	JobId                    string            `json:"jobid"`
+	MainServerJwtToken       string            `json:"mainserverjwttoken"`
+	ClientId                 string            `json:"clientid"`
+	PublicKeyBase64          string            `json:"publickeybase64"`
+	RemoteIdleTimeoutSeconds int64             `json:"remoteidletimeoutseconds,omitempty"`
 }
 
 type CommandRemoteReconnectToJobManagerData struct {
-	JobId              string `json:"jobid"`
-	JobAuthToken       string `json:"jobauthtoken"`
-	MainServerJwtToken string `json:"mainserverjwttoken"`
-	JobManagerPid      int    `json:"jobmanagerpid"`
-	JobManagerStartTs  int64  `json:"jobmanagerstartts"`
+	JobId                    string `json:"jobid"`
+	JobAuthToken             string `json:"jobauthtoken"`
+	MainServerJwtToken       string `json:"mainserverjwttoken"`
+	JobManagerPid            int    `json:"jobmanagerpid"`
+	JobManagerStartTs        int64  `json:"jobmanagerstartts"`
+	RemoteIdleTimeoutSeconds int64  `json:"remoteidletimeoutseconds,omitempty"`
 }
 
 type CommandRemoteReconnectToJobManagerRtnData struct {

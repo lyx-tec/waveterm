@@ -26,10 +26,20 @@ import (
 )
 
 type JobManagerConnection struct {
-	JobId     string
-	Conn      net.Conn
-	WshRpc    *wshutil.WshRpc
-	CleanupFn func()
+	JobId                    string
+	Conn                     net.Conn
+	WshRpc                   *wshutil.WshRpc
+	CleanupFn                func()
+	Pid                      int
+	StartTs                  int64
+	RemoteIdleTimeoutSeconds int64
+}
+
+type disconnectEntry struct {
+	Deadline time.Time
+	JobId    string
+	Pid      int
+	StartTs  int64
 }
 
 type ServerImpl struct {
@@ -41,17 +51,21 @@ type ServerImpl struct {
 	JobManagerMap map[string]*JobManagerConnection
 	SockName      string
 	Lock          sync.Mutex
+
+	disconnectDeadlines map[string]*disconnectEntry
+	disconnectMu        sync.Mutex
 }
 
 func MakeRemoteRpcServerImpl(logWriter io.Writer, router *wshutil.WshRouter, rpcClient *wshutil.WshRpc, isLocal bool, initialEnv map[string]string, sockName string) *ServerImpl {
 	return &ServerImpl{
-		LogWriter:     logWriter,
-		Router:        router,
-		RpcClient:     rpcClient,
-		IsLocal:       isLocal,
-		InitialEnv:    initialEnv,
-		JobManagerMap: make(map[string]*JobManagerConnection),
-		SockName:      sockName,
+		LogWriter:           logWriter,
+		Router:              router,
+		RpcClient:           rpcClient,
+		IsLocal:             isLocal,
+		InitialEnv:          initialEnv,
+		JobManagerMap:       make(map[string]*JobManagerConnection),
+		SockName:            sockName,
+		disconnectDeadlines: make(map[string]*disconnectEntry),
 	}
 }
 
