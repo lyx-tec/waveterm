@@ -1618,7 +1618,10 @@ func (ws *WshServer) SessionDeleteCommand(ctx context.Context, data wshrpc.Comma
 
 	memDaemon := sessiondaemon.Manager.Get(data.DaemonId)
 	if memDaemon != nil {
-		memDaemon.Stop(ctx)
+		err = memDaemon.Stop(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to stop session daemon: %w", err)
+		}
 		sessiondaemon.Manager.Remove(data.DaemonId)
 	}
 

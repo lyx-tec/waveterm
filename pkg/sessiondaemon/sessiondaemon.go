@@ -121,14 +121,19 @@ func (sd *SessionDaemon) Reconnect(ctx context.Context, dbDaemon *waveobj.Sessio
 	return nil
 }
 
-func (sd *SessionDaemon) Stop(ctx context.Context) {
+func (sd *SessionDaemon) Stop(ctx context.Context) error {
 	sd.Lock.Lock()
 	jobId := sd.JobId
 	sd.Lock.Unlock()
 	log.Printf("[sessiondaemon] stop daemon=%s job=%s", sd.DaemonId, jobId)
 	if jobId != "" {
-		jobcontroller.TerminateAndDetachJob(ctx, jobId)
+		err := jobcontroller.TerminateAndDetachJob(ctx, jobId)
+		if err != nil {
+			log.Printf("[sessiondaemon:%s] error terminating remote job %s: %v", sd.DaemonId, jobId, err)
+			return fmt.Errorf("failed to terminate remote job: %w", err)
+		}
 	}
+	return nil
 }
 
 func (sd *SessionDaemon) SendInput(ctx context.Context, inputData []byte, sigName string, termSize *waveobj.TermSize) error {
@@ -385,7 +390,11 @@ func (sd *SessionDaemonManager) reapRunning(ctx context.Context, dbDaemon *waveo
 
 	log.Printf("[sessiondaemon:%s] idle timeout reached, terminating", dbDaemon.OID)
 	if hasMem {
-		memDaemon.Stop(ctx)
+		err := memDaemon.Stop(ctx)
+		if err != nil {
+			log.Printf("[sessiondaemon:%s] error stopping daemon, will retry next cycle: %v", dbDaemon.OID, err)
+			return
+		}
 		sd.Remove(dbDaemon.OID)
 	}
 	wstore.DBDelete(ctx, waveobj.OType_SessionDaemon, dbDaemon.OID)

@@ -476,7 +476,10 @@ func handleBlockCloseEvent(event *wps.WaveEvent) {
 	}
 
 	for _, jobId := range jobIds {
-		TerminateAndDetachJob(ctx, jobId)
+		err := TerminateAndDetachJob(ctx, jobId)
+		if err != nil {
+			log.Printf("[job:%s] error in handleBlockCloseEvent: %v", jobId, err)
+		}
 	}
 }
 
@@ -926,15 +929,17 @@ func tryTerminateJobManager(ctx context.Context, jobId string) {
 	}
 }
 
-func TerminateAndDetachJob(ctx context.Context, jobId string) {
+func TerminateAndDetachJob(ctx context.Context, jobId string) error {
 	err := TerminateJobManager(ctx, jobId)
 	if err != nil {
 		log.Printf("[job:%s] error terminating job manager: %v", jobId, err)
+		return fmt.Errorf("terminate job manager: %w", err)
 	}
 	err = DetachJobFromBlock(ctx, jobId, true)
 	if err != nil {
 		log.Printf("[job:%s] error detaching job from block: %v", jobId, err)
 	}
+	return nil
 }
 
 func TerminateJobManager(ctx context.Context, jobId string) error {
