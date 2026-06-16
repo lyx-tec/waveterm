@@ -1661,11 +1661,23 @@ func (ws *WshServer) SessionListCommand(ctx context.Context, data wshrpc.Command
 }
 
 func (ws *WshServer) SessionAttachCommand(ctx context.Context, data wshrpc.CommandSessionAttachData) error {
+	log.Printf("[sessiondaemon] SessionAttach: block=%s old_daemon=%s new_daemon=%s new_daemon_job=%s",
+		data.BlockId, data.CurrentDaemonId, data.DaemonId, func() string {
+			if data.DaemonId != "" {
+				if db, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, data.DaemonId); err == nil && db != nil {
+					return db.JobId
+				}
+			}
+			return ""
+		}())
+
 	if data.CurrentDaemonId != "" && data.CurrentDaemonId == data.DaemonId {
+		log.Printf("[sessiondaemon] SessionAttach: block=%s already attached to daemon=%s, skipping", data.BlockId, data.DaemonId)
 		return nil
 	}
 
 	if data.CurrentDaemonId != "" {
+		log.Printf("[sessiondaemon] SessionAttach: detaching block=%s from old_daemon=%s", data.BlockId, data.CurrentDaemonId)
 		sessiondaemon.Manager.DetachBlock(ctx, data.CurrentDaemonId, data.BlockId)
 	}
 
@@ -1688,6 +1700,14 @@ func (ws *WshServer) SessionAttachCommand(ctx context.Context, data wshrpc.Comma
 		block.Meta[waveobj.MetaKey_SessionDaemonId] = data.DaemonId
 		block.JobId = dbDaemon.JobId
 	})
+	log.Printf("[sessiondaemon] SessionAttach: block=%s daemon=%s meta_updated daemon_job=%s block_job=%s",
+		data.BlockId, data.DaemonId, dbDaemon.JobId, func() string {
+			if b, err := wstore.DBMustGet[*waveobj.Block](ctx, data.BlockId); err == nil && b != nil {
+				return b.JobId
+			}
+			return "?"
+		}())
+
 	if err != nil {
 		sessiondaemon.Manager.DetachBlock(ctx, data.DaemonId, data.BlockId)
 		if data.CurrentDaemonId != "" {
@@ -1696,6 +1716,7 @@ func (ws *WshServer) SessionAttachCommand(ctx context.Context, data wshrpc.Comma
 		return fmt.Errorf("update block meta: %w", err)
 	}
 
+	log.Printf("[sessiondaemon] SessionAttach: triggering resync for block=%s", data.BlockId)
 	resyncBlockController(ctx, data.BlockId)
 	wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Block, data.BlockId))
 	return nil
@@ -1733,7 +1754,20 @@ func (ws *WshServer) SessionInfoCommand(ctx context.Context, data wshrpc.Command
 	if err != nil {
 		return nil, fmt.Errorf("session daemon %q not found: %w", data.DaemonId, err)
 	}
-	return buildSessionInfoRtnData(ctx, dbDaemon)
+	// If the DB daemon has no JobId yet, check the in-memory daemon which
+	// may be more current (SetJobId updates memory before DB, so the block
+	// JobId sync can trigger a frontend SessionInfo call before the daemon
+	// DB write is visible).
+	if dbDaemon.JobId == "" {
+		if memJobId := sessiondaemon.Manager.GetMemJobId(dbDaemon.OID); memJobId != "" {
+			log.Printf("[sessiondaemon] SessionInfo: daemon=%s DB jobId empty, using in-memory jobId=%s", dbDaemon.OID, memJobId)
+			dbDaemon.JobId = memJobId
+		}
+	}
+	info, err := buildSessionInfoRtnData(ctx, dbDaemon)
+	log.Printf("[sessiondaemon] SessionInfo: daemon=%s job=%s status=%s blocks=%d err=%v",
+		data.DaemonId, dbDaemon.JobId, dbDaemon.Status, len(info.Blocks), err)
+	return info, err
 }
 
 func (ws *WshServer) SessionTagCommand(ctx context.Context, data wshrpc.CommandSessionTagData) error {
@@ -1741,32 +1775,11 @@ func (ws *WshServer) SessionTagCommand(ctx context.Context, data wshrpc.CommandS
 	if err != nil {
 		return fmt.Errorf("session daemon %q not found: %w", data.DaemonId, err)
 	}
-
-	memDaemon := sessiondaemon.Manager.Get(data.DaemonId)
-	if memDaemon != nil {
-		memDaemon.Lock.Lock()
-		memDaemon.Name = data.Name
-		memDaemon.Lock.Unlock()
-	}
-
-	err = wstore.DBUpdateFn(ctx, data.DaemonId, func(sd *waveobj.SessionDaemon) {
-		sd.Name = data.Name
-		sd.IsAnonymous = false
-	})
-	if err != nil {
-		return fmt.Errorf("update session daemon: %w", err)
-	}
-	return nil
+	return sessiondaemon.Manager.Rename(ctx, data.DaemonId, data.Name)
 }
 
 func (ws *WshServer) RecordSessionActivityCommand(ctx context.Context, data wshrpc.CommandRecordSessionActivityData) error {
-	err := wstore.DBUpdateFn(ctx, data.DaemonId, func(sd *waveobj.SessionDaemon) {
-		sd.LastActiveAt = time.Now().UnixMilli()
-	})
-	if err != nil {
-		return fmt.Errorf("record session activity: %w", err)
-	}
-	return nil
+	return sessiondaemon.Manager.RecordActivity(ctx, data.DaemonId)
 }
 
 func buildSessionInfoRtnData(ctx context.Context, dbDaemon *waveobj.SessionDaemon) (*wshrpc.SessionInfoRtnData, error) {

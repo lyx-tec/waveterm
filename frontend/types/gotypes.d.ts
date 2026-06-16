@@ -587,6 +587,7 @@ declare global {
         mainserverjwttoken: string;
         jobmanagerpid: number;
         jobmanagerstartts: number;
+        remoteidletimeoutseconds?: number;
     };
 
     // wshrpc.CommandRemoteReconnectToJobManagerRtnData
@@ -608,6 +609,7 @@ declare global {
         mainserverjwttoken: string;
         clientid: string;
         publickeybase64: string;
+        remoteidletimeoutseconds?: number;
     };
 
     // wshrpc.CommandRemoteTerminateJobManagerData

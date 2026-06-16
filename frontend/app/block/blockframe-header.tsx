@@ -9,7 +9,6 @@ import {
     renderHeaderElements,
 } from "@/app/block/blockutil";
 import { ConnectionButton } from "@/app/block/connectionbutton";
-import { DurableSessionFlyover } from "@/app/block/durable-session-flyover";
 import { SessionDaemonIndicator } from "@/app/block/session-daemon-indicator";
 import { getBlockBadgeAtom } from "@/app/store/badge";
 import {
@@ -225,7 +224,6 @@ const BlockFrame_Header = ({
     let viewIconUnion = util.useAtomValueSafe(viewModel?.viewIcon) ?? blockViewToIcon(metaView);
     const preIconButton = util.useAtomValueSafe(viewModel?.preIconButton);
     const useTermHeader = util.useAtomValueSafe(viewModel?.useTermHeader);
-    const termConfigedDurable = util.useAtomValueSafe(viewModel?.termConfigedDurable);
     const hideViewName = util.useAtomValueSafe(viewModel?.hideViewName);
     const badge = jotai.useAtomValue(getBlockBadgeAtom(useTermHeader ? nodeModel.blockId : null));
     const magnified = jotai.useAtomValue(nodeModel.isMagnified);
@@ -270,15 +268,6 @@ const BlockFrame_Header = ({
                     connection={metaConnection}
                     changeConnModalAtom={changeConnModalAtom}
                     isTerminalBlock={isTerminalBlock}
-                />
-            )}
-            {useTermHeader && termConfigedDurable != null && (
-                <DurableSessionFlyover
-                    key="durable-status"
-                    blockId={nodeModel.blockId}
-                    viewModel={viewModel}
-                    placement="bottom"
-                    divClassName="iconbutton disabled text-[13px] ml-[-4px]"
                 />
             )}
             <SessionDaemonIndicator blockId={nodeModel.blockId} useTermHeader={useTermHeader} />

@@ -18,6 +18,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/utilds"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wcore"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
@@ -84,30 +85,42 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 	}
 
 	if dbDaemon.JobId != "" {
-		log.Printf("[sessiondaemon] start: attempting reconnect to job=%s status=%s", dbDaemon.JobId, dbDaemon.Status)
-		err = daemon.Reconnect(ctx, dbDaemon, rtOpts)
-		if err == nil {
-			log.Printf("[sessiondaemon] start: reconnect ok block=%s job=%s", sdc.BlockId, dbDaemon.JobId)
-			sdc.incrementVersion()
-			sdc.sendControllerStatus()
-			return nil
-		}
-		log.Printf("[sessiondaemon] start: reconnect failed block=%s job=%s err=%v", sdc.BlockId, dbDaemon.JobId, err)
-
-		dbDaemon, dbErr := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, sdc.DaemonId)
-		if dbErr != nil {
-			return fmt.Errorf("error reading daemon after reconnect failure: %w", dbErr)
-		}
-		switch dbDaemon.Status {
-		case sessiondaemon.Status_Disconnected:
-			return fmt.Errorf("daemon is disconnected, waiting for connection to recover")
-		case sessiondaemon.Status_Done:
-			return fmt.Errorf("remote job manager has exited, restart or delete the session")
-		default:
-			return fmt.Errorf("unexpected daemon status %q after reconnect failure", dbDaemon.Status)
-		}
+		return sdc.tryReconnect(ctx, daemon, dbDaemon, rtOpts)
 	}
 
+	return sdc.createJobAndSync(ctx, blockMeta, rtOpts)
+}
+
+// tryReconnect attempts to reconnect to the daemon's existing job.
+func (sdc *SessionDaemonController) tryReconnect(ctx context.Context, daemon *sessiondaemon.SessionDaemon, dbDaemon *waveobj.SessionDaemon, rtOpts *waveobj.RuntimeOpts) error {
+	log.Printf("[sessiondaemon] start: attempting reconnect to job=%s status=%s", dbDaemon.JobId, dbDaemon.Status)
+	err := daemon.Reconnect(ctx, dbDaemon, rtOpts)
+	if err == nil {
+		log.Printf("[sessiondaemon] start: reconnect ok block=%s job=%s", sdc.BlockId, dbDaemon.JobId)
+		sdc.incrementVersion()
+		sdc.sendControllerStatus()
+		return nil
+	}
+	log.Printf("[sessiondaemon] start: reconnect failed block=%s job=%s err=%v", sdc.BlockId, dbDaemon.JobId, err)
+
+	dbDaemon, dbErr := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, sdc.DaemonId)
+	if dbErr != nil {
+		return fmt.Errorf("error reading daemon after reconnect failure: %w", dbErr)
+	}
+	switch dbDaemon.Status {
+	case sessiondaemon.Status_Disconnected:
+		return fmt.Errorf("daemon is disconnected, waiting for connection to recover")
+	case sessiondaemon.Status_Done:
+		return fmt.Errorf("remote job manager has exited, restart or delete the session")
+	default:
+		return fmt.Errorf("unexpected daemon status %q after reconnect failure", dbDaemon.Status)
+	}
+}
+
+// createJobAndSync starts a new remote job for the daemon and syncs
+// the resulting JobId to all attached blocks so the frontend can
+// switch its zoneId.
+func (sdc *SessionDaemonController) createJobAndSync(ctx context.Context, blockMeta waveobj.MetaMapType, rtOpts *waveobj.RuntimeOpts) error {
 	log.Printf("[sessiondaemon] start: starting new job block=%s", sdc.BlockId)
 	fsErr := filestore.WFS.MakeFile(ctx, sdc.BlockId, wavebase.BlockFile_Term, nil, wshrpc.FileOpts{MaxSize: DefaultTermMaxFileSize, Circular: true})
 	if fsErr != nil && fsErr != fs.ErrExist {
@@ -120,16 +133,38 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 	}
 	log.Printf("[sessiondaemon] start: new job started block=%s job=%s", sdc.BlockId, jobId)
 
-	err = daemon.SetJobId(ctx, dbDaemon, jobId)
+	daemon := sessiondaemon.Manager.Get(sdc.DaemonId)
+	if daemon == nil {
+		return fmt.Errorf("session daemon %s not found in manager", sdc.DaemonId)
+	}
+
+	err = daemon.SetJobId(ctx, jobId)
 	if err != nil {
 		log.Printf("[sessiondaemon] start: set job id failed daemon=%s job=%s err=%v", sdc.DaemonId, jobId, err)
 		return fmt.Errorf("failed to set job id on daemon: %w", err)
 	}
 
+	sdc.syncJobIdToBlocks(ctx, jobId)
+
 	log.Printf("[sessiondaemon] start: done block=%s daemon=%s job=%s", sdc.BlockId, sdc.DaemonId, jobId)
 	sdc.incrementVersion()
 	sdc.sendControllerStatus()
 	return nil
+}
+
+// syncJobIdToBlocks writes the daemon's JobId to every attached block's
+// DB record so the frontend useEffect picks up the change and calls
+// attachToDaemon, switching the terminal zoneId to the new job's output stream.
+func (sdc *SessionDaemonController) syncJobIdToBlocks(ctx context.Context, jobId string) {
+	attachedBlocks := sessiondaemon.Manager.GetBlocksForDaemon(sdc.DaemonId)
+	log.Printf("[sessiondaemon] start: syncing jobId=%s to %d attached blocks for daemon=%s", jobId, len(attachedBlocks), sdc.DaemonId)
+	for _, blockId := range attachedBlocks {
+		wstore.DBUpdateFn(ctx, blockId, func(block *waveobj.Block) {
+			block.JobId = jobId
+		})
+		wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Block, blockId))
+		log.Printf("[sessiondaemon] start: synced jobId=%s to block=%s", jobId, blockId)
+	}
 }
 
 func (sdc *SessionDaemonController) startNewJob(ctx context.Context, blockMeta waveobj.MetaMapType, rtOpts *waveobj.RuntimeOpts) (string, error) {
@@ -191,18 +226,13 @@ func (sdc *SessionDaemonController) startNewJob(ctx context.Context, blockMeta w
 }
 
 func (sdc *SessionDaemonController) Stop(graceful bool, newStatus string, destroy bool) {
-	log.Printf("[sessiondaemon] stop: block=%s daemon=%s graceful=%v destroy=%v", sdc.BlockId, sdc.DaemonId, graceful, destroy)
 	if !destroy {
 		return
 	}
 	ctx := context.Background()
 	sessiondaemon.Manager.DetachBlock(ctx, sdc.DaemonId, sdc.BlockId)
-	dbDaemon, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, sdc.DaemonId)
-	if err != nil {
-		log.Printf("[sessiondaemon] stop: db lookup failed daemon=%s err=%v", sdc.DaemonId, err)
-		return
-	}
-	log.Printf("[sessiondaemon] stop: daemon=%s remaining blocks=%d anonymous=%v", sdc.DaemonId, len(sessiondaemon.Manager.GetBlocksForDaemon(sdc.DaemonId)), dbDaemon.IsAnonymous)
+	log.Printf("[sessiondaemon] stop: block=%s daemon=%s remaining=%d",
+		sdc.BlockId, sdc.DaemonId, len(sessiondaemon.Manager.GetBlocksForDaemon(sdc.DaemonId)))
 }
 
 func (sdc *SessionDaemonController) SendInput(inputUnion *BlockInputUnion) error {

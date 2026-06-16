@@ -71,6 +71,11 @@ const JobOutputFileName = "term"
 const AutoReconnectDelay = 1 * time.Second
 const AutoReconnectCooldown = 30 * time.Second
 
+// ClearSessionDaemonJobFn is set by sessiondaemon to handle cleaning
+// up daemon state when a remote job manager exits.  The sessiondaemon
+// package cannot be imported here (import cycle), so a callback is used.
+var ClearSessionDaemonJobFn func(ctx context.Context, jobId string)
+
 type connState struct {
 	actual      bool
 	processed   bool
@@ -1149,16 +1154,8 @@ func doReconnectJob(ctx context.Context, jobId string, rtOpts *waveobj.RuntimeOp
 				sendBlockJobStatusEventByJob(ctx, updatedJob)
 			}
 			// Clear session daemon references to this job so daemons can be restarted
-			sessionDaemons, qErr := wstore.DBGetAllObjsByType[*waveobj.SessionDaemon](ctx, waveobj.OType_SessionDaemon)
-			if qErr == nil {
-				for _, sd := range sessionDaemons {
-					if sd.JobId == jobId {
-						wstore.DBUpdateFn(ctx, sd.OID, func(dbSd *waveobj.SessionDaemon) {
-							dbSd.JobId = ""
-							dbSd.Status = "init"
-						})
-					}
-				}
+			if ClearSessionDaemonJobFn != nil {
+				ClearSessionDaemonJobFn(ctx, jobId)
 			}
 			telemetry.GoRecordTEventWrap(&telemetrydata.TEvent{
 				Event: "job:done",
