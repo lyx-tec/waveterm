@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/jobcontroller"
+	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -52,6 +53,9 @@ var Manager = &SessionDaemonManager{
 func init() {
 	jobcontroller.ClearSessionDaemonJobFn = func(ctx context.Context, jobId string) {
 		Manager.ClearJobIdFromDaemons(ctx, jobId)
+	}
+	jobcontroller.OnConnectionUpFn = func(ctx context.Context, connName string) {
+		Manager.OnConnectionUp(ctx, connName)
 	}
 }
 
@@ -451,6 +455,66 @@ func (sd *SessionDaemonManager) InitFromDB(ctx context.Context) error {
 
 	log.Printf("[sessiondaemon] InitFromDB complete: %d daemons loaded", len(sd.Daemons))
 	return nil
+}
+
+// OnConnectionUp is called when an SSH connection becomes ready.
+// It checks all daemons on that connection: reconnects live jobs and
+// cleans up daemons whose remote job manager has died.
+func (sd *SessionDaemonManager) OnConnectionUp(ctx context.Context, connName string) {
+	daemons, err := wstore.DBGetAllObjsByType[*waveobj.SessionDaemon](ctx, waveobj.OType_SessionDaemon)
+	if err != nil {
+		return
+	}
+	for _, dbDaemon := range daemons {
+		if dbDaemon.Connection != connName {
+			continue
+		}
+		if dbDaemon.JobId == "" {
+			continue
+		}
+
+		// Read JobManagerPid from the job record.
+		job, err := wstore.DBMustGet[*waveobj.Job](ctx, dbDaemon.JobId)
+		if err != nil || job.JobManagerPid == 0 {
+			continue
+		}
+
+		alive, err := conncontroller.CheckRemoteProcessAlive(ctx, connName, job.JobManagerPid)
+		if err != nil {
+			log.Printf("[sessiondaemon:%s] OnConnectionUp: error checking remote process: %v", dbDaemon.OID, err)
+			continue
+		}
+		if alive {
+			// Job manager is still running — try to reconnect and bring
+			// it back to running status.
+			log.Printf("[sessiondaemon:%s] OnConnectionUp: remote job manager alive (pid=%d), reconnecting", dbDaemon.OID, job.JobManagerPid)
+			sd.Lock.Lock()
+			memDaemon := sd.Daemons[dbDaemon.OID]
+			sd.Lock.Unlock()
+			if memDaemon != nil {
+				err := memDaemon.Reconnect(ctx, dbDaemon, nil)
+				if err != nil {
+					log.Printf("[sessiondaemon:%s] OnConnectionUp: reconnect failed: %v", dbDaemon.OID, err)
+				}
+			}
+			continue
+		}
+		// Job manager is dead — clean up the daemon so it can be
+		// restarted on next attach.
+		log.Printf("[sessiondaemon:%s] OnConnectionUp: remote job manager dead (pid=%d), cleaning up", dbDaemon.OID, job.JobManagerPid)
+		sd.Lock.Lock()
+		memDaemon := sd.Daemons[dbDaemon.OID]
+		sd.Lock.Unlock()
+		if memDaemon != nil {
+			memDaemon.Lock.Lock()
+			memDaemon.JobId = ""
+			memDaemon.Lock.Unlock()
+		}
+		wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbSd *waveobj.SessionDaemon) {
+			dbSd.JobId = ""
+			dbSd.Status = Status_Init
+		})
+	}
 }
 
 func (sd *SessionDaemonManager) StartIdleReaper(ctx context.Context) {

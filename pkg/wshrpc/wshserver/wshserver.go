@@ -1689,6 +1689,18 @@ func (ws *WshServer) SessionAttachCommand(ctx context.Context, data wshrpc.Comma
 		return fmt.Errorf("session daemon %q not found: %w", data.DaemonId, err)
 	}
 
+	// Refuse cross-connection attach: a block on connection A cannot
+	// share a daemon whose remote job runs on connection B.
+	blockData, err := wstore.DBMustGet[*waveobj.Block](ctx, data.BlockId)
+	if err == nil {
+		blockConn := blockData.Meta.GetString(waveobj.MetaKey_Connection, "")
+		if blockConn != "" && blockConn != dbDaemon.Connection {
+			log.Printf("[sessiondaemon] SessionAttach: block=%s conn=%q daemon conn=%q mismatch, refusing",
+				data.BlockId, blockConn, dbDaemon.Connection)
+			return fmt.Errorf("cannot attach to session on connection %q from connection %q", dbDaemon.Connection, blockConn)
+		}
+	}
+
 	_, err = sessiondaemon.Manager.GetOrCreate(ctx, dbDaemon)
 	if err != nil {
 		return fmt.Errorf("create session daemon in manager: %w", err)

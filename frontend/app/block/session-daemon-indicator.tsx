@@ -8,7 +8,7 @@ import { useWaveEnv } from "@/app/waveenv/waveenv";
 import { fireAndForget } from "@/util/util";
 import { autoUpdate, flip, FloatingPortal, offset, shift, useFloating } from "@floating-ui/react";
 import * as jotai from "jotai";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BlockEnv } from "./blockenv";
 
 interface SessionDisplayData {
@@ -256,6 +256,8 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
     const isSshConn = connName && !connName.startsWith("local") && !connName.startsWith("wsl://");
     const visible = !!daemonId || isSshConn;
 
+    const sameConnSessions = useMemo(() => sessions.filter((s) => s.connection === connName), [sessions, connName]);
+
     return (
         <>
             <div
@@ -384,12 +386,12 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                                 </span>
                             </div>
                         )}
-                        {sessions.length === 0 && (
+                        {sameConnSessions.length === 0 && (
                             <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "14px 10px" }}>
-                                Loading sessions...
+                                No sessions on this connection
                             </div>
                         )}
-                        {sessions.map((s) => {
+                        {sameConnSessions.map((s) => {
                             const isActive = s.daemonid === daemonId;
                             const blockCount = s.blocks?.length ?? 0;
                             const canClose = blockCount === 0;

@@ -76,6 +76,10 @@ const AutoReconnectCooldown = 30 * time.Second
 // package cannot be imported here (import cycle), so a callback is used.
 var ClearSessionDaemonJobFn func(ctx context.Context, jobId string)
 
+// OnConnectionUpFn is set by sessiondaemon to handle session daemon
+// state reconciliation when an SSH connection becomes ready.
+var OnConnectionUpFn func(ctx context.Context, connName string)
+
 type connState struct {
 	actual      bool
 	processed   bool
@@ -520,6 +524,11 @@ func onConnectionUp(connName string) {
 	}
 
 	log.Printf("[conn:%s] finished reconnecting jobs: %d/%d successful", connName, successCount, len(jobsToReconnect))
+
+	// Reconcile session daemon state for this connection.
+	if OnConnectionUpFn != nil {
+		OnConnectionUpFn(ctx, connName)
+	}
 }
 
 func onConnectionDown(connName string) {
