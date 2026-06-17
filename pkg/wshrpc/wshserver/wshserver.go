@@ -1611,16 +1611,21 @@ func (ws *WshServer) SessionCreateCommand(ctx context.Context, data wshrpc.Comma
 }
 
 func (ws *WshServer) SessionDeleteCommand(ctx context.Context, data wshrpc.CommandSessionDeleteData) error {
-	_, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
+	dbDaemon, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, data.DaemonId)
 	if err != nil {
 		return fmt.Errorf("session daemon %q not found: %w", data.DaemonId, err)
 	}
 
 	memDaemon := sessiondaemon.Manager.Get(data.DaemonId)
+	forceDelete := false
 	if memDaemon != nil {
 		err = memDaemon.Stop(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to stop session daemon: %w", err)
+			forceDelete = isRemoteProcessDead(ctx, dbDaemon)
+			if !forceDelete {
+				return fmt.Errorf("failed to stop session daemon: %w", err)
+			}
+			log.Printf("[sessiondaemon] SessionDelete: daemon=%s remote job dead, deleting despite stop failure", data.DaemonId)
 		}
 		sessiondaemon.Manager.Remove(data.DaemonId)
 	}
@@ -1630,6 +1635,20 @@ func (ws *WshServer) SessionDeleteCommand(ctx context.Context, data wshrpc.Comma
 		return fmt.Errorf("delete session daemon: %w", err)
 	}
 	return nil
+}
+
+// isRemoteProcessDead checks whether the daemon's remote job manager
+// process has exited.  Returns true if confirmed dead.
+func isRemoteProcessDead(ctx context.Context, dbDaemon *waveobj.SessionDaemon) bool {
+	if dbDaemon.JobId == "" {
+		return false
+	}
+	job, err := wstore.DBMustGet[*waveobj.Job](ctx, dbDaemon.JobId)
+	if err != nil || job.JobManagerPid == 0 {
+		return false
+	}
+	alive, err := conncontroller.CheckRemoteProcessAlive(ctx, dbDaemon.Connection, job.JobManagerPid)
+	return err == nil && !alive
 }
 
 func (ws *WshServer) SessionListCommand(ctx context.Context, data wshrpc.CommandSessionListData) ([]wshrpc.SessionInfoRtnData, error) {

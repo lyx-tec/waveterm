@@ -499,21 +499,37 @@ func (sd *SessionDaemonManager) OnConnectionUp(ctx context.Context, connName str
 			}
 			continue
 		}
-		// Job manager is dead — clean up the daemon so it can be
-		// restarted on next attach.
-		log.Printf("[sessiondaemon:%s] OnConnectionUp: remote job manager dead (pid=%d), cleaning up", dbDaemon.OID, job.JobManagerPid)
+		// Job manager is dead.
+		log.Printf("[sessiondaemon:%s] OnConnectionUp: remote job manager dead (pid=%d)", dbDaemon.OID, job.JobManagerPid)
 		sd.Lock.Lock()
 		memDaemon := sd.Daemons[dbDaemon.OID]
 		sd.Lock.Unlock()
-		if memDaemon != nil {
-			memDaemon.Lock.Lock()
-			memDaemon.JobId = ""
-			memDaemon.Lock.Unlock()
+		hasBlocks := memDaemon != nil && memDaemon.HasAttachedBlocks()
+
+		if hasBlocks {
+			// Blocks are still attached — reset to init so they auto-recover
+			// when the block becomes active again.
+			if memDaemon != nil {
+				memDaemon.Lock.Lock()
+				memDaemon.JobId = ""
+				memDaemon.Lock.Unlock()
+			}
+			wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbSd *waveobj.SessionDaemon) {
+				dbSd.JobId = ""
+				dbSd.Status = Status_Init
+			})
+			log.Printf("[sessiondaemon:%s] OnConnectionUp: dead, has blocks, reset to init", dbDaemon.OID)
+		} else {
+			// No blocks referencing this daemon — safe to delete.
+			if memDaemon != nil {
+				sd.Remove(dbDaemon.OID)
+			}
+			if err := wstore.DBDelete(ctx, waveobj.OType_SessionDaemon, dbDaemon.OID); err != nil {
+				log.Printf("[sessiondaemon:%s] OnConnectionUp: error deleting dead daemon: %v", dbDaemon.OID, err)
+			} else {
+				log.Printf("[sessiondaemon:%s] OnConnectionUp: dead, no blocks, deleted", dbDaemon.OID)
+			}
 		}
-		wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbSd *waveobj.SessionDaemon) {
-			dbSd.JobId = ""
-			dbSd.Status = Status_Init
-		})
 	}
 }
 

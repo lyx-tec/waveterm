@@ -78,14 +78,43 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 	}
 
 	if dbDaemon.Status == sessiondaemon.Status_Done {
-		return fmt.Errorf("remote job manager has exited, restart or delete the session")
+		// Job manager is dead — clear state and create a new job.
+		log.Printf("[sessiondaemon] start: daemon=%s is done, recovering to init", sdc.DaemonId)
+		daemon.Lock.Lock()
+		daemon.JobId = ""
+		daemon.Lock.Unlock()
+		wstore.DBUpdateFn(ctx, sdc.DaemonId, func(dbSd *waveobj.SessionDaemon) {
+			dbSd.JobId = ""
+			dbSd.Status = sessiondaemon.Status_Init
+		})
+		return sdc.createJobAndSync(ctx, blockMeta, rtOpts)
 	}
 	if dbDaemon.Status == sessiondaemon.Status_Disconnected {
 		return fmt.Errorf("daemon is disconnected, waiting for connection to recover")
 	}
 
 	if dbDaemon.JobId != "" {
-		return sdc.tryReconnect(ctx, daemon, dbDaemon, rtOpts)
+		err := sdc.tryReconnect(ctx, daemon, dbDaemon, rtOpts)
+		if err != nil {
+			// Reconnect failed — check if the job manager was confirmed
+			// gone.  If so, clear state and create a new job.
+			dbDaemon2, dbErr := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, sdc.DaemonId)
+			if dbErr == nil && dbDaemon2.Status == sessiondaemon.Status_Done {
+				log.Printf("[sessiondaemon] start: daemon=%s reconnect confirmed done, recovering", sdc.DaemonId)
+				daemon.Lock.Lock()
+				daemon.JobId = ""
+				daemon.Lock.Unlock()
+				wstore.DBUpdateFn(ctx, sdc.DaemonId, func(dbSd *waveobj.SessionDaemon) {
+					dbSd.JobId = ""
+					dbSd.Status = sessiondaemon.Status_Init
+				})
+				return sdc.createJobAndSync(ctx, blockMeta, rtOpts)
+			}
+			return err
+		}
+		sdc.incrementVersion()
+		sdc.sendControllerStatus()
+		return nil
 	}
 
 	return sdc.createJobAndSync(ctx, blockMeta, rtOpts)
@@ -97,24 +126,10 @@ func (sdc *SessionDaemonController) tryReconnect(ctx context.Context, daemon *se
 	err := daemon.Reconnect(ctx, dbDaemon, rtOpts)
 	if err == nil {
 		log.Printf("[sessiondaemon] start: reconnect ok block=%s job=%s", sdc.BlockId, dbDaemon.JobId)
-		sdc.incrementVersion()
-		sdc.sendControllerStatus()
 		return nil
 	}
 	log.Printf("[sessiondaemon] start: reconnect failed block=%s job=%s err=%v", sdc.BlockId, dbDaemon.JobId, err)
-
-	dbDaemon, dbErr := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, sdc.DaemonId)
-	if dbErr != nil {
-		return fmt.Errorf("error reading daemon after reconnect failure: %w", dbErr)
-	}
-	switch dbDaemon.Status {
-	case sessiondaemon.Status_Disconnected:
-		return fmt.Errorf("daemon is disconnected, waiting for connection to recover")
-	case sessiondaemon.Status_Done:
-		return fmt.Errorf("remote job manager has exited, restart or delete the session")
-	default:
-		return fmt.Errorf("unexpected daemon status %q after reconnect failure", dbDaemon.Status)
-	}
+	return err
 }
 
 // createJobAndSync starts a new remote job for the daemon and syncs
