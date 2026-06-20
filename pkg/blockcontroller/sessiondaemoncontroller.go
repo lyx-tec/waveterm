@@ -81,18 +81,19 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 		log.Printf("[sessiondaemon] start: daemon=%s is done, falling back block=%s to shell", sdc.DaemonId, sdc.BlockId)
 		return fallbackSessionDaemonToShell(ctx, sdc.DaemonId, sdc.BlockId)
 	}
-	if dbDaemon.Status == sessiondaemon.Status_Disconnected {
-		return fmt.Errorf("daemon is disconnected, waiting for connection to recover")
-	}
 
 	if dbDaemon.JobId != "" {
-		gone, goneErr := isSessionDaemonJobManagerGone(ctx, dbDaemon)
-		if goneErr != nil {
-			return fmt.Errorf("check session daemon job manager: %w", goneErr)
+		jobState, stateErr := sessiondaemon.ClassifyJobManagerState(ctx, dbDaemon)
+		if stateErr != nil {
+			return fmt.Errorf("check session daemon job manager: %w", stateErr)
 		}
-		if gone {
+		if jobState == sessiondaemon.JobManagerState_Dead {
 			log.Printf("[sessiondaemon] start: daemon=%s job manager gone, falling back block=%s to shell", sdc.DaemonId, sdc.BlockId)
 			return fallbackSessionDaemonToShell(ctx, sdc.DaemonId, sdc.BlockId)
+		}
+		if jobState == sessiondaemon.JobManagerState_Unknown {
+			log.Printf("[sessiondaemon] start: daemon=%s job state unknown, waiting block=%s", sdc.DaemonId, sdc.BlockId)
+			return ErrSessionDaemonJobUnknown
 		}
 		err := sdc.tryReconnect(ctx, daemon, dbDaemon, rtOpts)
 		if err != nil {
@@ -106,6 +107,10 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 		sdc.incrementVersion()
 		sdc.sendControllerStatus()
 		return nil
+	}
+
+	if dbDaemon.Status == sessiondaemon.Status_Disconnected {
+		return ErrSessionDaemonJobUnknown
 	}
 
 	return sdc.createJobAndSync(ctx, blockMeta, rtOpts)

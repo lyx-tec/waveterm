@@ -30,6 +30,12 @@ const (
 	Status_Done         = "done"
 )
 
+const (
+	JobManagerState_Alive   = "alive"
+	JobManagerState_Dead    = "dead"
+	JobManagerState_Unknown = "unknown"
+)
+
 type SessionDaemon struct {
 	Lock sync.Mutex
 
@@ -328,29 +334,62 @@ func (sd *SessionDaemonManager) SendInput(daemonId string, inputData []byte, sig
 // MarkDone clears the daemon's JobId and sets its status to Done,
 // both in memory and in the database. Used when the resync controller
 // detects that a daemon's remote job manager has exited.
-func (sd *SessionDaemonManager) MarkDone(ctx context.Context, daemonId string) {
+func (sd *SessionDaemonManager) MarkDone(ctx context.Context, daemonId string) error {
 	sd.Lock.Lock()
 	daemon, ok := sd.Daemons[daemonId]
 	sd.Lock.Unlock()
-	if !ok {
-		return
+	var oldJobId string
+	if ok {
+		daemon.Lock.Lock()
+		oldJobId = daemon.JobId
+		daemon.JobId = ""
+		daemon.Lock.Unlock()
 	}
-	daemon.Lock.Lock()
-	oldJobId := daemon.JobId
-	daemon.JobId = ""
-	daemon.Lock.Unlock()
 	if err := wstore.DBUpdateFn(ctx, daemonId, func(dbSd *waveobj.SessionDaemon) {
 		dbSd.JobId = ""
 		dbSd.Status = Status_Done
 	}); err != nil {
-		// Roll back memory to avoid inconsistency.
-		daemon.Lock.Lock()
-		daemon.JobId = oldJobId
-		daemon.Lock.Unlock()
-		log.Printf("[sessiondaemon:%s] MarkDone: DB update failed, rolled back memory JobId: %v", daemonId, err)
-		return
+		if ok {
+			daemon.Lock.Lock()
+			daemon.JobId = oldJobId
+			daemon.Lock.Unlock()
+		}
+		log.Printf("[sessiondaemon:%s] MarkDone: DB update failed: %v", daemonId, err)
+		return err
 	}
 	log.Printf("[sessiondaemon:%s] MarkDone: job cleared, status=done", daemonId)
+	return nil
+}
+
+func ClassifyJobManagerState(ctx context.Context, dbDaemon *waveobj.SessionDaemon) (string, error) {
+	if dbDaemon == nil || dbDaemon.JobId == "" {
+		return JobManagerState_Dead, nil
+	}
+	job, err := wstore.DBGet[*waveobj.Job](ctx, dbDaemon.JobId)
+	if err != nil {
+		return JobManagerState_Unknown, fmt.Errorf("get job %s: %w", dbDaemon.JobId, err)
+	}
+	if job == nil || job.JobManagerStatus == jobcontroller.JobManagerStatus_Done {
+		return JobManagerState_Dead, nil
+	}
+	if job.JobManagerPid == 0 {
+		return JobManagerState_Unknown, nil
+	}
+	connected, err := conncontroller.IsConnected(dbDaemon.Connection)
+	if err != nil {
+		return JobManagerState_Unknown, err
+	}
+	if !connected {
+		return JobManagerState_Unknown, nil
+	}
+	alive, err := conncontroller.CheckRemoteProcessAlive(ctx, dbDaemon.Connection, job.JobManagerPid)
+	if err != nil {
+		return JobManagerState_Unknown, nil
+	}
+	if alive {
+		return JobManagerState_Alive, nil
+	}
+	return JobManagerState_Dead, nil
 }
 
 // GetMemJobId returns the in-memory JobId for a daemon, used as a
@@ -487,21 +526,14 @@ func (sd *SessionDaemonManager) OnConnectionUp(ctx context.Context, connName str
 			continue
 		}
 
-		// Read JobManagerPid from the job record.
-		job, err := wstore.DBMustGet[*waveobj.Job](ctx, dbDaemon.JobId)
-		if err != nil || job.JobManagerPid == 0 {
-			continue
-		}
-
-		alive, err := conncontroller.CheckRemoteProcessAlive(ctx, connName, job.JobManagerPid)
+		jobState, err := ClassifyJobManagerState(ctx, dbDaemon)
 		if err != nil {
-			log.Printf("[sessiondaemon:%s] OnConnectionUp: error checking remote process: %v", dbDaemon.OID, err)
+			log.Printf("[sessiondaemon:%s] OnConnectionUp: error checking job manager state: %v", dbDaemon.OID, err)
 			continue
 		}
-		if alive {
-			// Job manager is still running — try to reconnect and bring
-			// it back to running status.
-			log.Printf("[sessiondaemon:%s] OnConnectionUp: remote job manager alive (pid=%d), reconnecting", dbDaemon.OID, job.JobManagerPid)
+		switch jobState {
+		case JobManagerState_Alive:
+			log.Printf("[sessiondaemon:%s] OnConnectionUp: remote job manager alive, reconnecting", dbDaemon.OID)
 			sd.Lock.Lock()
 			memDaemon := sd.Daemons[dbDaemon.OID]
 			sd.Lock.Unlock()
@@ -511,39 +543,13 @@ func (sd *SessionDaemonManager) OnConnectionUp(ctx context.Context, connName str
 					log.Printf("[sessiondaemon:%s] OnConnectionUp: reconnect failed: %v", dbDaemon.OID, err)
 				}
 			}
-			continue
-		}
-		// Job manager is dead.
-		log.Printf("[sessiondaemon:%s] OnConnectionUp: remote job manager dead (pid=%d)", dbDaemon.OID, job.JobManagerPid)
-		sd.Lock.Lock()
-		memDaemon := sd.Daemons[dbDaemon.OID]
-		sd.Lock.Unlock()
-		hasBlocks := memDaemon != nil && memDaemon.HasAttachedBlocks()
-
-		if hasBlocks {
-			if memDaemon != nil {
-				memDaemon.Lock.Lock()
-				memDaemon.JobId = ""
-				memDaemon.Lock.Unlock()
-			}
-			wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbSd *waveobj.SessionDaemon) {
-				dbSd.JobId = ""
-				dbSd.Status = Status_Done
-			})
-			log.Printf("[sessiondaemon:%s] OnConnectionUp: dead, has blocks, status -> done", dbDaemon.OID)
+		case JobManagerState_Dead:
+			log.Printf("[sessiondaemon:%s] OnConnectionUp: remote job manager dead, falling back", dbDaemon.OID)
 			if OnDaemonJobDoneFn != nil {
 				OnDaemonJobDoneFn(ctx, dbDaemon.OID)
 			}
-		} else {
-			// No blocks referencing this daemon — safe to delete.
-			if memDaemon != nil {
-				sd.Remove(dbDaemon.OID)
-			}
-			if err := wstore.DBDelete(ctx, waveobj.OType_SessionDaemon, dbDaemon.OID); err != nil {
-				log.Printf("[sessiondaemon:%s] OnConnectionUp: error deleting dead daemon: %v", dbDaemon.OID, err)
-			} else {
-				log.Printf("[sessiondaemon:%s] OnConnectionUp: dead, no blocks, deleted", dbDaemon.OID)
-			}
+		case JobManagerState_Unknown:
+			log.Printf("[sessiondaemon:%s] OnConnectionUp: job manager state unknown, waiting", dbDaemon.OID)
 		}
 	}
 }

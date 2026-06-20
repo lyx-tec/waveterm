@@ -6,6 +6,7 @@ package blockcontroller
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -17,7 +18,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/wavetermdev/waveterm/pkg/blocklogger"
 	"github.com/wavetermdev/waveterm/pkg/filestore"
-	"github.com/wavetermdev/waveterm/pkg/jobcontroller"
 	"github.com/wavetermdev/waveterm/pkg/remote"
 	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
 	"github.com/wavetermdev/waveterm/pkg/sessiondaemon"
@@ -45,6 +45,8 @@ const (
 	Status_Done    = "done"
 	Status_Init    = "init"
 )
+
+var ErrSessionDaemonJobUnknown = errors.New("session daemon job state unknown")
 
 const (
 	DefaultTermMaxFileSize = 2 * 1024 * 1024
@@ -223,14 +225,14 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 		daemonId = ""
 	}
 
-	// Validate existing daemon: if stale (done/disconnected/not found), clear it and fall through to ShellController
+	// Validate existing daemon: confirmed-done daemons fall back to ShellController; disconnected daemons wait for connection recovery.
 	if daemonId != "" && controllerName == BlockController_Shell {
 		dbDaemon, err := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, daemonId)
 		staleStatus := false
 		if err != nil {
 			log.Printf("[sessiondaemon] staledaemon: daemon=%s block=%s not found in DB err=%v, clearing", daemonId, blockId, err)
 			staleStatus = true
-		} else if dbDaemon.Status == sessiondaemon.Status_Done || dbDaemon.Status == sessiondaemon.Status_Disconnected {
+		} else if dbDaemon.Status == sessiondaemon.Status_Done {
 			log.Printf("[sessiondaemon] staledaemon: daemon=%s block=%s status=%s, clearing and falling back to ShellController", daemonId, blockId, dbDaemon.Status)
 			staleStatus = true
 		} else {
@@ -350,33 +352,27 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 					if err != nil {
 						return err
 					}
-					stopBlockController(blockId)
-					deleteController(blockId)
-					time.Sleep(100 * time.Millisecond)
 					existing = nil
 					daemonId = ""
-					controller = MakeShellController(tabId, blockId, controllerName, connName)
-					registerController(blockId, controller)
+					controller = replaceBlockControllerWithShell(tabId, blockId, controllerName, connName)
 					status = controller.GetRuntimeStatus()
 				} else {
-					gone, goneErr := isSessionDaemonJobManagerGone(ctx, dbDaemon)
-					if goneErr != nil {
-						return fmt.Errorf("check session daemon job manager: %w", goneErr)
+					jobState, stateErr := sessiondaemon.ClassifyJobManagerState(ctx, dbDaemon)
+					if stateErr != nil {
+						return fmt.Errorf("check session daemon job manager: %w", stateErr)
 					}
-					if gone {
+					if jobState == sessiondaemon.JobManagerState_Dead {
 						log.Printf("[sessiondaemon] resync: daemon=%s block=%s job manager gone, falling back to shell", sdc.DaemonId, blockId)
 						err = fallbackSessionDaemonToShell(ctx, sdc.DaemonId, blockId)
 						if err != nil {
 							return err
 						}
-						stopBlockController(blockId)
-						deleteController(blockId)
-						time.Sleep(100 * time.Millisecond)
-						existing = nil
 						daemonId = ""
-						controller = MakeShellController(tabId, blockId, controllerName, connName)
-						registerController(blockId, controller)
+						existing = nil
+						controller = replaceBlockControllerWithShell(tabId, blockId, controllerName, connName)
 						status = controller.GetRuntimeStatus()
+					} else if jobState == sessiondaemon.JobManagerState_Unknown {
+						log.Printf("[sessiondaemon] resync: daemon=%s block=%s job state unknown, waiting", sdc.DaemonId, blockId)
 					} else {
 						log.Printf("[sessiondaemon] resync: daemon=%s block=%s job=%s alive, skipping", sdc.DaemonId, blockId, daemon.JobId)
 					}
@@ -398,6 +394,9 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 		// Start controller
 		err = controller.Start(ctx, blockData.Meta, rtOpts, force)
 		if err != nil {
+			if errors.Is(err, ErrSessionDaemonJobUnknown) {
+				return nil
+			}
 			return fmt.Errorf("error starting controller: %w", err)
 		}
 	}
@@ -433,27 +432,6 @@ func DestroyBlockController(blockId string) {
 	deleteController(blockId)
 }
 
-func isSessionDaemonJobManagerGone(ctx context.Context, dbDaemon *waveobj.SessionDaemon) (bool, error) {
-	if dbDaemon == nil || dbDaemon.JobId == "" {
-		return true, nil
-	}
-	job, err := wstore.DBGet[*waveobj.Job](ctx, dbDaemon.JobId)
-	if err != nil {
-		return false, fmt.Errorf("get job %s: %w", dbDaemon.JobId, err)
-	}
-	if job == nil || job.JobManagerStatus == jobcontroller.JobManagerStatus_Done {
-		return true, nil
-	}
-	if job.JobManagerPid == 0 {
-		return false, nil
-	}
-	alive, err := conncontroller.CheckRemoteProcessAlive(ctx, dbDaemon.Connection, job.JobManagerPid)
-	if err != nil {
-		return false, err
-	}
-	return !alive, nil
-}
-
 func fallbackSessionDaemonToShell(ctx context.Context, daemonId string, currentBlockId string) error {
 	log.Printf("[sessiondaemon] fallback: daemon=%s currentBlock=%s", daemonId, currentBlockId)
 	blockIds := sessiondaemon.Manager.GetBlocksForDaemon(daemonId)
@@ -461,11 +439,9 @@ func fallbackSessionDaemonToShell(ctx context.Context, daemonId string, currentB
 		blockIds = append(blockIds, currentBlockId)
 	}
 
-	sessiondaemon.Manager.MarkDone(ctx, daemonId)
-	_ = wstore.DBUpdateFn(ctx, daemonId, func(dbSd *waveobj.SessionDaemon) {
-		dbSd.JobId = ""
-		dbSd.Status = sessiondaemon.Status_Done
-	})
+	if err := sessiondaemon.Manager.MarkDone(ctx, daemonId); err != nil {
+		return fmt.Errorf("mark daemon done: %w", err)
+	}
 
 	seen := make(map[string]bool)
 	for _, blockId := range blockIds {
@@ -492,6 +468,15 @@ func fallbackSessionDaemonToShell(ctx context.Context, daemonId string, currentB
 		}
 	}
 	return nil
+}
+
+func replaceBlockControllerWithShell(tabId string, blockId string, controllerName string, connName string) Controller {
+	stopBlockController(blockId)
+	deleteController(blockId)
+	time.Sleep(100 * time.Millisecond)
+	controller := MakeShellController(tabId, blockId, controllerName, connName)
+	registerController(blockId, controller)
+	return controller
 }
 
 func resyncBlockController(ctx context.Context, blockId string) {
