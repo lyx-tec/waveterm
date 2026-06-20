@@ -394,8 +394,8 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                         {sameConnSessions.map((s) => {
                             const isActive = s.daemonid === daemonId;
                             const blockCount = s.blocks?.length ?? 0;
-                            const canClose = blockCount === 0;
-                            const displayStatus = blockCount === 0 ? "idle" : s.status;
+                            const canClose = blockCount === 0 || s.status === "done";
+                            const displayStatus = s.status === "done" ? "done" : blockCount === 0 ? "idle" : s.status;
                             return (
                                 <div
                                     key={s.daemonid}
@@ -584,7 +584,7 @@ export function SessionDaemonIndicator({ blockId, useTermHeader }: SessionDaemon
                                                     alignItems: "center",
                                                     gap: 3,
                                                 }}
-                                                title="Close idle session"
+                                                title="Close session"
                                             >
                                                 <i className="fa-sharp fa-solid fa-xmark" />
                                                 Close

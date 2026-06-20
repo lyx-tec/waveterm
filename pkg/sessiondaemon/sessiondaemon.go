@@ -50,6 +50,8 @@ var Manager = &SessionDaemonManager{
 	Daemons: make(map[string]*SessionDaemon),
 }
 
+var OnDaemonJobDoneFn func(ctx context.Context, daemonId string)
+
 func init() {
 	jobcontroller.ClearSessionDaemonJobFn = func(ctx context.Context, jobId string) {
 		Manager.ClearJobIdFromDaemons(ctx, jobId)
@@ -269,6 +271,10 @@ func (sd *SessionDaemonManager) resetIdleTimer(ctx context.Context, daemonId str
 
 func (sd *SessionDaemonManager) startIdleCountdown(ctx context.Context, daemonId string) {
 	err := wstore.DBUpdateFn(ctx, daemonId, func(dbD *waveobj.SessionDaemon) {
+		if dbD.Status == Status_Done {
+			dbD.IdleSince = DoneReapTimeout
+			return
+		}
 		dbD.IdleSince = dbD.IdleTimeout
 	})
 	if err != nil {
@@ -395,28 +401,36 @@ func (sd *SessionDaemonManager) RecordActivity(ctx context.Context, daemonId str
 }
 
 // ClearJobIdFromDaemons clears the JobId from all daemons (memory + DB)
-// whose job matches jobId. Called when a remote job manager exits so that
-// the daemon can be restarted.
+// whose job matches jobId. Called when a remote job manager exits.
 func (sd *SessionDaemonManager) ClearJobIdFromDaemons(ctx context.Context, jobId string) {
 	sd.Lock.Lock()
-	defer sd.Lock.Unlock()
+	var affectedDaemonIds []string
 	for _, daemon := range sd.Daemons {
 		daemon.Lock.Lock()
 		if daemon.JobId == jobId {
 			oldDaemonJobId := daemon.JobId
+			daemonId := daemon.DaemonId
 			daemon.JobId = ""
 			daemon.Lock.Unlock()
-			if err := wstore.DBUpdateFn(ctx, daemon.DaemonId, func(dbSd *waveobj.SessionDaemon) {
+			if err := wstore.DBUpdateFn(ctx, daemonId, func(dbSd *waveobj.SessionDaemon) {
 				dbSd.JobId = ""
-				dbSd.Status = Status_Init
+				dbSd.Status = Status_Done
 			}); err != nil {
 				log.Printf("[sessiondaemon:%s] ClearJobIdFromDaemons: DB update failed, memory stale (was job=%s): %v",
-					daemon.DaemonId, oldDaemonJobId, err)
+					daemonId, oldDaemonJobId, err)
 			}
-			log.Printf("[sessiondaemon:%s] ClearJobIdFromDaemons: job=%s cleared, status=init", daemon.DaemonId, jobId)
+			affectedDaemonIds = append(affectedDaemonIds, daemonId)
+			log.Printf("[sessiondaemon:%s] ClearJobIdFromDaemons: job=%s cleared, status=done", daemonId, jobId)
 			continue
 		}
 		daemon.Lock.Unlock()
+	}
+	sd.Lock.Unlock()
+
+	for _, daemonId := range affectedDaemonIds {
+		if OnDaemonJobDoneFn != nil {
+			OnDaemonJobDoneFn(ctx, daemonId)
+		}
 	}
 }
 
@@ -507,8 +521,6 @@ func (sd *SessionDaemonManager) OnConnectionUp(ctx context.Context, connName str
 		hasBlocks := memDaemon != nil && memDaemon.HasAttachedBlocks()
 
 		if hasBlocks {
-			// Blocks are still attached — reset to init so they auto-recover
-			// when the block becomes active again.
 			if memDaemon != nil {
 				memDaemon.Lock.Lock()
 				memDaemon.JobId = ""
@@ -516,9 +528,12 @@ func (sd *SessionDaemonManager) OnConnectionUp(ctx context.Context, connName str
 			}
 			wstore.DBUpdateFn(ctx, dbDaemon.OID, func(dbSd *waveobj.SessionDaemon) {
 				dbSd.JobId = ""
-				dbSd.Status = Status_Init
+				dbSd.Status = Status_Done
 			})
-			log.Printf("[sessiondaemon:%s] OnConnectionUp: dead, has blocks, reset to init", dbDaemon.OID)
+			log.Printf("[sessiondaemon:%s] OnConnectionUp: dead, has blocks, status -> done", dbDaemon.OID)
+			if OnDaemonJobDoneFn != nil {
+				OnDaemonJobDoneFn(ctx, dbDaemon.OID)
+			}
 		} else {
 			// No blocks referencing this daemon — safe to delete.
 			if memDaemon != nil {

@@ -25,6 +25,7 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/util/shellutil"
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wcore"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
 	"github.com/wavetermdev/waveterm/pkg/wslconn"
@@ -36,6 +37,8 @@ const (
 	BlockController_Cmd     = "cmd"
 	BlockController_Tsunami = "tsunami"
 )
+
+const MetaKey_SessionNoAutoCreate = "session:noautocreate"
 
 const (
 	Status_Running = "running"
@@ -137,6 +140,12 @@ func InitBlockController() {
 		Event:     wps.Event_BlockClose,
 		AllScopes: true,
 	}, nil)
+	sessiondaemon.OnDaemonJobDoneFn = func(ctx context.Context, daemonId string) {
+		err := fallbackSessionDaemonToShell(ctx, daemonId, "")
+		if err != nil {
+			log.Printf("[sessiondaemon] error falling back daemon=%s to shell: %v", daemonId, err)
+		}
+	}
 }
 
 func handleBlockCloseEvent(event *wps.WaveEvent) {
@@ -209,6 +218,7 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 		}
 		_ = wstore.DBUpdateFn(ctx, blockId, func(block *waveobj.Block) {
 			delete(block.Meta, waveobj.MetaKey_SessionDaemonId)
+			block.JobId = ""
 		})
 		daemonId = ""
 	}
@@ -234,6 +244,8 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 			}
 			_ = wstore.DBUpdateFn(ctx, blockId, func(block *waveobj.Block) {
 				delete(block.Meta, waveobj.MetaKey_SessionDaemonId)
+				block.Meta[MetaKey_SessionNoAutoCreate] = true
+				block.JobId = ""
 			})
 			daemonId = ""
 		}
@@ -331,17 +343,43 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 		// If so, clear the JobId so Start() runs again on the next ResyncController call.
 		if sdc, ok := controller.(*SessionDaemonController); ok {
 			if daemon := sessiondaemon.Manager.Get(sdc.DaemonId); daemon != nil && daemon.JobId != "" {
-				jobId := daemon.JobId
-				jobStatus, jErr := jobcontroller.GetJobManagerStatus(ctx, jobId)
-				if jErr == nil && jobStatus == jobcontroller.JobManagerStatus_Running {
-					log.Printf("[sessiondaemon] resync: daemon=%s block=%s job=%s alive, skipping", sdc.DaemonId, blockId, jobId)
-				} else {
-					log.Printf("[sessiondaemon] resync: daemon=%s block=%s job=%s not running (status=%s err=%v), marking done and recreating controller", sdc.DaemonId, blockId, jobId, jobStatus, jErr)
-					sessiondaemon.Manager.MarkDone(ctx, sdc.DaemonId)
+				dbDaemon, dbErr := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, sdc.DaemonId)
+				if dbErr != nil {
+					log.Printf("[sessiondaemon] resync: daemon=%s block=%s missing DB record, falling back to shell: %v", sdc.DaemonId, blockId, dbErr)
+					err = fallbackSessionDaemonToShell(ctx, sdc.DaemonId, blockId)
+					if err != nil {
+						return err
+					}
 					stopBlockController(blockId)
+					deleteController(blockId)
 					time.Sleep(100 * time.Millisecond)
 					existing = nil
-					// Fall through to controller recreation + Start below
+					daemonId = ""
+					controller = MakeShellController(tabId, blockId, controllerName, connName)
+					registerController(blockId, controller)
+					status = controller.GetRuntimeStatus()
+				} else {
+					gone, goneErr := isSessionDaemonJobManagerGone(ctx, dbDaemon)
+					if goneErr != nil {
+						return fmt.Errorf("check session daemon job manager: %w", goneErr)
+					}
+					if gone {
+						log.Printf("[sessiondaemon] resync: daemon=%s block=%s job manager gone, falling back to shell", sdc.DaemonId, blockId)
+						err = fallbackSessionDaemonToShell(ctx, sdc.DaemonId, blockId)
+						if err != nil {
+							return err
+						}
+						stopBlockController(blockId)
+						deleteController(blockId)
+						time.Sleep(100 * time.Millisecond)
+						existing = nil
+						daemonId = ""
+						controller = MakeShellController(tabId, blockId, controllerName, connName)
+						registerController(blockId, controller)
+						status = controller.GetRuntimeStatus()
+					} else {
+						log.Printf("[sessiondaemon] resync: daemon=%s block=%s job=%s alive, skipping", sdc.DaemonId, blockId, daemon.JobId)
+					}
 				}
 			}
 		}
@@ -393,6 +431,86 @@ func DestroyBlockController(blockId string) {
 	log.Printf("[sessiondaemon] DestroyBlockController: block=%s stack:\n%s", blockId, string(stackBuf[:stackLen]))
 	stopBlockController(blockId)
 	deleteController(blockId)
+}
+
+func isSessionDaemonJobManagerGone(ctx context.Context, dbDaemon *waveobj.SessionDaemon) (bool, error) {
+	if dbDaemon == nil || dbDaemon.JobId == "" {
+		return true, nil
+	}
+	job, err := wstore.DBGet[*waveobj.Job](ctx, dbDaemon.JobId)
+	if err != nil {
+		return false, fmt.Errorf("get job %s: %w", dbDaemon.JobId, err)
+	}
+	if job == nil || job.JobManagerStatus == jobcontroller.JobManagerStatus_Done {
+		return true, nil
+	}
+	if job.JobManagerPid == 0 {
+		return false, nil
+	}
+	alive, err := conncontroller.CheckRemoteProcessAlive(ctx, dbDaemon.Connection, job.JobManagerPid)
+	if err != nil {
+		return false, err
+	}
+	return !alive, nil
+}
+
+func fallbackSessionDaemonToShell(ctx context.Context, daemonId string, currentBlockId string) error {
+	log.Printf("[sessiondaemon] fallback: daemon=%s currentBlock=%s", daemonId, currentBlockId)
+	blockIds := sessiondaemon.Manager.GetBlocksForDaemon(daemonId)
+	if len(blockIds) == 0 && currentBlockId != "" {
+		blockIds = append(blockIds, currentBlockId)
+	}
+
+	sessiondaemon.Manager.MarkDone(ctx, daemonId)
+	_ = wstore.DBUpdateFn(ctx, daemonId, func(dbSd *waveobj.SessionDaemon) {
+		dbSd.JobId = ""
+		dbSd.Status = sessiondaemon.Status_Done
+	})
+
+	seen := make(map[string]bool)
+	for _, blockId := range blockIds {
+		if blockId == "" || seen[blockId] {
+			continue
+		}
+		seen[blockId] = true
+		sessiondaemon.Manager.DetachBlock(ctx, daemonId, blockId)
+		err := wstore.DBUpdateFn(ctx, blockId, func(block *waveobj.Block) {
+			if block.Meta == nil {
+				block.Meta = make(waveobj.MetaMapType)
+			}
+			delete(block.Meta, waveobj.MetaKey_SessionDaemonId)
+			block.Meta[MetaKey_SessionNoAutoCreate] = true
+			block.JobId = ""
+		})
+		if err != nil {
+			return fmt.Errorf("fallback block %s to shell: %w", blockId, err)
+		}
+		wcore.SendWaveObjUpdate(waveobj.MakeORef(waveobj.OType_Block, blockId))
+		if blockId != currentBlockId {
+			DestroyBlockController(blockId)
+			resyncBlockController(ctx, blockId)
+		}
+	}
+	return nil
+}
+
+func resyncBlockController(ctx context.Context, blockId string) {
+	tabs, err := wstore.DBGetAllObjsByType[*waveobj.Tab](ctx, waveobj.OType_Tab)
+	if err != nil {
+		log.Printf("[sessiondaemon] warning: error getting tabs for resync: %v", err)
+		return
+	}
+	for _, tab := range tabs {
+		for _, bid := range tab.BlockIds {
+			if bid == blockId {
+				err = ResyncController(ctx, tab.OID, blockId, nil, true)
+				if err != nil {
+					log.Printf("[sessiondaemon] warning: fallback resync failed block=%s: %v", blockId, err)
+				}
+				return
+			}
+		}
+	}
 }
 
 func sendConnMonitorInputNotification(controller Controller) {

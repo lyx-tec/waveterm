@@ -1729,6 +1729,7 @@ func (ws *WshServer) SessionAttachCommand(ctx context.Context, data wshrpc.Comma
 
 	err = wstore.DBUpdateFn(ctx, data.BlockId, func(block *waveobj.Block) {
 		block.Meta[waveobj.MetaKey_SessionDaemonId] = data.DaemonId
+		delete(block.Meta, blockcontroller.MetaKey_SessionNoAutoCreate)
 		block.JobId = dbDaemon.JobId
 	})
 	log.Printf("[sessiondaemon] SessionAttach: block=%s daemon=%s meta_updated daemon_job=%s block_job=%s",
@@ -1770,6 +1771,7 @@ func (ws *WshServer) SessionDetachCommand(ctx context.Context, data wshrpc.Comma
 		sessiondaemon.Manager.DetachBlock(ctx, data.DaemonId, blockId)
 		err = wstore.DBUpdateFn(ctx, blockId, func(block *waveobj.Block) {
 			delete(block.Meta, waveobj.MetaKey_SessionDaemonId)
+			block.Meta[blockcontroller.MetaKey_SessionNoAutoCreate] = true
 		})
 		if err != nil {
 			return fmt.Errorf("update block meta: %w", err)

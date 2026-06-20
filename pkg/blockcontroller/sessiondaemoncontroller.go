@@ -78,37 +78,28 @@ func (sdc *SessionDaemonController) Start(ctx context.Context, blockMeta waveobj
 	}
 
 	if dbDaemon.Status == sessiondaemon.Status_Done {
-		// Job manager is dead — clear state and create a new job.
-		log.Printf("[sessiondaemon] start: daemon=%s is done, recovering to init", sdc.DaemonId)
-		daemon.Lock.Lock()
-		daemon.JobId = ""
-		daemon.Lock.Unlock()
-		wstore.DBUpdateFn(ctx, sdc.DaemonId, func(dbSd *waveobj.SessionDaemon) {
-			dbSd.JobId = ""
-			dbSd.Status = sessiondaemon.Status_Init
-		})
-		return sdc.createJobAndSync(ctx, blockMeta, rtOpts)
+		log.Printf("[sessiondaemon] start: daemon=%s is done, falling back block=%s to shell", sdc.DaemonId, sdc.BlockId)
+		return fallbackSessionDaemonToShell(ctx, sdc.DaemonId, sdc.BlockId)
 	}
 	if dbDaemon.Status == sessiondaemon.Status_Disconnected {
 		return fmt.Errorf("daemon is disconnected, waiting for connection to recover")
 	}
 
 	if dbDaemon.JobId != "" {
+		gone, goneErr := isSessionDaemonJobManagerGone(ctx, dbDaemon)
+		if goneErr != nil {
+			return fmt.Errorf("check session daemon job manager: %w", goneErr)
+		}
+		if gone {
+			log.Printf("[sessiondaemon] start: daemon=%s job manager gone, falling back block=%s to shell", sdc.DaemonId, sdc.BlockId)
+			return fallbackSessionDaemonToShell(ctx, sdc.DaemonId, sdc.BlockId)
+		}
 		err := sdc.tryReconnect(ctx, daemon, dbDaemon, rtOpts)
 		if err != nil {
-			// Reconnect failed — check if the job manager was confirmed
-			// gone.  If so, clear state and create a new job.
 			dbDaemon2, dbErr := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, sdc.DaemonId)
 			if dbErr == nil && dbDaemon2.Status == sessiondaemon.Status_Done {
-				log.Printf("[sessiondaemon] start: daemon=%s reconnect confirmed done, recovering", sdc.DaemonId)
-				daemon.Lock.Lock()
-				daemon.JobId = ""
-				daemon.Lock.Unlock()
-				wstore.DBUpdateFn(ctx, sdc.DaemonId, func(dbSd *waveobj.SessionDaemon) {
-					dbSd.JobId = ""
-					dbSd.Status = sessiondaemon.Status_Init
-				})
-				return sdc.createJobAndSync(ctx, blockMeta, rtOpts)
+				log.Printf("[sessiondaemon] start: daemon=%s reconnect confirmed done, falling back block=%s to shell", sdc.DaemonId, sdc.BlockId)
+				return fallbackSessionDaemonToShell(ctx, sdc.DaemonId, sdc.BlockId)
 			}
 			return err
 		}
@@ -322,6 +313,7 @@ func autoCreateSessionDaemon(ctx context.Context, blockId string, blockMeta wave
 
 	err = wstore.DBUpdateFn(ctx, blockId, func(block *waveobj.Block) {
 		block.Meta[waveobj.MetaKey_SessionDaemonId] = dbDaemon.OID
+		delete(block.Meta, MetaKey_SessionNoAutoCreate)
 	})
 	if err != nil {
 		return "", fmt.Errorf("update block meta: %w", err)
