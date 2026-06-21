@@ -267,7 +267,7 @@ func (impl *ServerImpl) RemoteStartJobCommand(ctx context.Context, data wshrpc.C
 		jobConn.StartTs = time.Now().UnixMilli()
 		jobConn.RemoteIdleTimeoutSeconds = data.RemoteIdleTimeoutSeconds
 		if jobConn.RemoteIdleTimeoutSeconds <= 0 {
-			jobConn.RemoteIdleTimeoutSeconds = 172800
+			jobConn.RemoteIdleTimeoutSeconds = 604800
 		}
 	}
 	impl.Lock.Unlock()
@@ -341,7 +341,7 @@ func (impl *ServerImpl) RemoteReconnectToJobManagerCommand(ctx context.Context, 
 		jobConn.StartTs = data.JobManagerStartTs
 		jobConn.RemoteIdleTimeoutSeconds = data.RemoteIdleTimeoutSeconds
 		if jobConn.RemoteIdleTimeoutSeconds <= 0 {
-			jobConn.RemoteIdleTimeoutSeconds = 172800
+			jobConn.RemoteIdleTimeoutSeconds = 604800
 		}
 	}
 	impl.Lock.Unlock()

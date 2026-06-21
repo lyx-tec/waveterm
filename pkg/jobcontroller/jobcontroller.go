@@ -40,7 +40,7 @@ import (
 )
 
 const DefaultTimeout = 2 * time.Second
-const DefaultRemoteIdleTimeoutSeconds = 172800 // 2 days
+const DefaultRemoteIdleTimeoutSeconds = 604800 // 7 days
 
 const (
 	JobManagerStatus_Init    = "init"
