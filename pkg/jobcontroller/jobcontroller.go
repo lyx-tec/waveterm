@@ -80,6 +80,10 @@ var ClearSessionDaemonJobFn func(ctx context.Context, jobId string)
 // state reconciliation when an SSH connection becomes ready.
 var OnConnectionUpFn func(ctx context.Context, connName string)
 
+// GetSessionDaemonBlocksFn is set by sessiondaemon so daemon-backed job
+// output can still be mirrored into each attached block's terminal file.
+var GetSessionDaemonBlocksFn func(daemonId string) []string
+
 type connState struct {
 	actual      bool
 	processed   bool
@@ -829,11 +833,28 @@ func handleAppendJobFile(ctx context.Context, jobId string, fileName string, dat
 	if err != nil {
 		return fmt.Errorf("error getting job: %w", err)
 	}
-	if job != nil && job.AttachedBlockId != "" && !strings.HasPrefix(job.AttachedBlockId, "daemon:") {
-		err = doWFSAppend(ctx, waveobj.MakeORef(waveobj.OType_Block, job.AttachedBlockId), fileName, data)
-		if err != nil {
-			return fmt.Errorf("error appending to block file: %w", err)
+	if job == nil || job.AttachedBlockId == "" {
+		return nil
+	}
+	if strings.HasPrefix(job.AttachedBlockId, "daemon:") {
+		daemonId := strings.TrimPrefix(job.AttachedBlockId, "daemon:")
+		if GetSessionDaemonBlocksFn == nil {
+			return nil
 		}
+		for _, blockId := range GetSessionDaemonBlocksFn(daemonId) {
+			if blockId == "" {
+				continue
+			}
+			err = doWFSAppend(ctx, waveobj.MakeORef(waveobj.OType_Block, blockId), fileName, data)
+			if err != nil {
+				return fmt.Errorf("error appending daemon job output to block file: %w", err)
+			}
+		}
+		return nil
+	}
+	err = doWFSAppend(ctx, waveobj.MakeORef(waveobj.OType_Block, job.AttachedBlockId), fileName, data)
+	if err != nil {
+		return fmt.Errorf("error appending to block file: %w", err)
 	}
 	return nil
 }

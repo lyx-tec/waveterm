@@ -53,6 +53,13 @@ const TermCacheFileName = "cache:term:full";
 const MinDataProcessedForCache = 100 * 1024;
 export const SupportsImageInput = true;
 const MaxRepaintTransactionMs = 2000;
+const AltScreenEnterSeq = "\x1b[?1049h";
+const AltScreenExitSeq = "\x1b[?1049l";
+const AppCursorKeysEnterSeq = "\x1b[?1h";
+const AppCursorKeysExitSeq = "\x1b[?1l";
+const CursorShowSeq = "\x1b[?25h";
+const ClearScreenSeq = "\x1b[2J";
+const HomeAndClearScreenSeq = "\x1b[H\x1b[2J";
 
 // detect webgl support
 function detectWebGLSupport(): boolean {
@@ -75,6 +82,104 @@ type TermWrapOptions = {
     nodeModel?: BlockNodeModel;
 };
 
+// Some remote full-screen programs clear the main screen without emitting
+// smcup/rmcup. Keep that temporary drawing in xterm's alternate buffer.
+class SyntheticAltScreenTracker {
+    pendingEnter: boolean = false;
+    active: boolean = false;
+    pendingExit: boolean = false;
+
+    process(data: string): string | null {
+        let changed = false;
+        let rtn = "";
+
+        for (let idx = 0; idx < data.length; ) {
+            const handledSeq = this.matchAndAppendSeq(data, idx);
+            if (handledSeq != null) {
+                rtn += handledSeq.data;
+                idx += handledSeq.seqLen;
+                changed ||= handledSeq.changed;
+                continue;
+            }
+            rtn += data[idx];
+            idx++;
+        }
+
+        const exitSeq = this.flushPendingExit();
+        if (exitSeq != null) {
+            rtn += exitSeq;
+            changed = true;
+        }
+        return changed ? rtn : null;
+    }
+
+    matchAndAppendSeq(data: string, idx: number): { data: string; seqLen: number; changed: boolean } | null {
+        if (data.startsWith(AltScreenEnterSeq, idx)) {
+            this.reset();
+            return { data: AltScreenEnterSeq, seqLen: AltScreenEnterSeq.length, changed: false };
+        }
+        if (data.startsWith(AltScreenExitSeq, idx)) {
+            this.reset();
+            return { data: AltScreenExitSeq, seqLen: AltScreenExitSeq.length, changed: false };
+        }
+        if (data.startsWith(AppCursorKeysEnterSeq, idx)) {
+            if (!this.active) {
+                this.pendingEnter = true;
+            }
+            return { data: AppCursorKeysEnterSeq, seqLen: AppCursorKeysEnterSeq.length, changed: false };
+        }
+        if (data.startsWith(AppCursorKeysExitSeq, idx)) {
+            let changed = false;
+            if (this.active) {
+                this.pendingExit = true;
+                changed = true;
+            }
+            this.pendingEnter = false;
+            return { data: AppCursorKeysExitSeq, seqLen: AppCursorKeysExitSeq.length, changed };
+        }
+        if (data.startsWith(CursorShowSeq, idx)) {
+            const exitSeq = this.flushPendingExit();
+            return {
+                data: exitSeq == null ? CursorShowSeq : CursorShowSeq + exitSeq,
+                seqLen: CursorShowSeq.length,
+                changed: exitSeq != null,
+            };
+        }
+        if (data.startsWith(HomeAndClearScreenSeq, idx)) {
+            return this.maybeEnterAltScreen(HomeAndClearScreenSeq);
+        }
+        if (data.startsWith(ClearScreenSeq, idx)) {
+            return this.maybeEnterAltScreen(ClearScreenSeq);
+        }
+        return null;
+    }
+
+    maybeEnterAltScreen(seq: string): { data: string; seqLen: number; changed: boolean } {
+        if (!this.pendingEnter || this.active) {
+            return { data: seq, seqLen: seq.length, changed: false };
+        }
+        this.active = true;
+        this.pendingEnter = false;
+        this.pendingExit = false;
+        return { data: AltScreenEnterSeq + seq, seqLen: seq.length, changed: true };
+    }
+
+    flushPendingExit(): string | null {
+        if (!this.pendingExit) {
+            return null;
+        }
+        this.active = false;
+        this.pendingExit = false;
+        return AltScreenExitSeq;
+    }
+
+    reset() {
+        this.pendingEnter = false;
+        this.active = false;
+        this.pendingExit = false;
+    }
+}
+
 export class TermWrap {
     tabId: string;
     blockId: string;
@@ -88,7 +193,6 @@ export class TermWrap {
     serializeAddon: SerializeAddon;
     mainFileSubject: SubjectWithRef<WSFileEventData>;
     _mainFileSub: Subscription | null = null;
-    _attachSeq: number = 0;
     loaded: boolean;
     heldData: Uint8Array[];
     handleResize_debounced: () => void;
@@ -125,6 +229,7 @@ export class TermWrap {
     lastMode2026ResetTs: number = 0;
     inSyncTransaction: boolean = false;
     inRepaintTransaction: boolean = false;
+    syntheticAltScreenTracker: SyntheticAltScreenTracker = new SyntheticAltScreenTracker();
 
     constructor(
         tabId: string,
@@ -333,48 +438,12 @@ export class TermWrap {
         return this.zoneId;
     }
 
-    async attachToDaemon(jobId: string): Promise<void> {
-        this._attachSeq++;
-        const mySeq = this._attachSeq;
-        if (this.zoneId === jobId) {
-            return;
-        }
-        if (this._mainFileSub) {
-            this._mainFileSub.unsubscribe();
-            this._mainFileSub = null;
-        }
-        if (this.mainFileSubject) {
-            this.mainFileSubject.release();
-        }
-        this.terminal.clear();
-        this.ptyOffset = 0;
-        this.heldData = [];
-        this.zoneId = jobId;
-        this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
-        this._mainFileSub = this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
-        await this.loadInitialTerminalData();
+    async attachToDaemon(_jobId: string): Promise<void> {
+        this.zoneId = this.blockId;
     }
 
     async detachFromDaemon(): Promise<void> {
-        this._attachSeq++;
-        const mySeq = this._attachSeq;
-        if (this.zoneId === this.blockId) {
-            return;
-        }
-        if (this._mainFileSub) {
-            this._mainFileSub.unsubscribe();
-            this._mainFileSub = null;
-        }
-        if (this.mainFileSubject) {
-            this.mainFileSubject.release();
-        }
-        this.terminal.clear();
-        this.ptyOffset = 0;
-        this.heldData = [];
         this.zoneId = this.blockId;
-        this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
-        this._mainFileSub = this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
-        await this.loadInitialTerminalData();
     }
 
     setCursorStyle(cursorStyle: string) {
@@ -543,6 +612,8 @@ export class TermWrap {
     }
 
     doTerminalWrite(data: string | Uint8Array, setPtyOffset?: number): Promise<void> {
+        const rawDataLen = data.length;
+        const writeData = setPtyOffset == null ? this.maybeAddSyntheticAltScreen(data) : data;
         if (isDev() && this.loaded) {
             const dataStr = data instanceof Uint8Array ? new TextDecoder().decode(data) : data;
             this.recentWrites.push({ idx: this.recentWritesCounter++, ts: Date.now(), data: dataStr });
@@ -554,17 +625,29 @@ export class TermWrap {
         const prtn = new Promise<void>((presolve, _) => {
             resolve = presolve;
         });
-        this.terminal.write(data, () => {
+        this.terminal.write(writeData, () => {
             if (setPtyOffset != null) {
                 this.ptyOffset = setPtyOffset;
             } else {
-                this.ptyOffset += data.length;
-                this.dataBytesProcessed += data.length;
+                this.ptyOffset += rawDataLen;
+                this.dataBytesProcessed += rawDataLen;
             }
             this.lastUpdated = Date.now();
             resolve();
         });
         return prtn;
+    }
+
+    maybeAddSyntheticAltScreen(data: string | Uint8Array): string | Uint8Array {
+        const dataStr = data instanceof Uint8Array ? new TextDecoder().decode(data) : data;
+        const syntheticData = this.syntheticAltScreenTracker.process(dataStr);
+        if (syntheticData == null) {
+            return data;
+        }
+        if (data instanceof Uint8Array) {
+            return new TextEncoder().encode(syntheticData);
+        }
+        return syntheticData;
     }
 
     async loadInitialTerminalData(): Promise<void> {
@@ -644,7 +727,7 @@ export class TermWrap {
         const termSize: TermSize = { rows: this.terminal.rows, cols: this.terminal.cols };
         console.log("idle timeout term", this.dataBytesProcessed, serializedOutput.length, termSize);
         fireAndForget(() =>
-            services.BlockService.SaveTerminalState(this.blockId, serializedOutput, "full", this.ptyOffset, termSize)
+            services.BlockService.SaveTerminalState(this.getZoneId(), serializedOutput, "full", this.ptyOffset, termSize)
         );
         this.dataBytesProcessed = 0;
     }

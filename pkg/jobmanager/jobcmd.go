@@ -7,7 +7,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -53,12 +55,7 @@ func MakeJobCmd(jobId string, cmdDef CmdDef) (*JobCmd, error) {
 		return nil, fmt.Errorf("invalid term size: %v", cmdDef.TermSize)
 	}
 	ecmd := exec.Command(cmdDef.Cmd, cmdDef.Args...)
-	if len(cmdDef.Env) > 0 {
-		ecmd.Env = make([]string, 0, len(cmdDef.Env))
-		for key, val := range cmdDef.Env {
-			ecmd.Env = append(ecmd.Env, fmt.Sprintf("%s=%s", key, val))
-		}
-	}
+	ecmd.Env = mergeEnv(os.Environ(), cmdDef.Env)
 	cmdPty, err := pty.StartWithSize(ecmd, &pty.Winsize{Rows: uint16(cmdDef.TermSize.Rows), Cols: uint16(cmdDef.TermSize.Cols)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to start command: %w", err)
@@ -70,6 +67,25 @@ func MakeJobCmd(jobId string, cmdDef CmdDef) (*JobCmd, error) {
 	jm.termSize = cmdDef.TermSize
 	go jm.waitForProcess()
 	return jm, nil
+}
+
+func mergeEnv(baseEnv []string, overrides map[string]string) []string {
+	envMap := make(map[string]string, len(baseEnv)+len(overrides))
+	for _, envVar := range baseEnv {
+		key, val, found := strings.Cut(envVar, "=")
+		if !found {
+			continue
+		}
+		envMap[key] = val
+	}
+	for key, val := range overrides {
+		envMap[key] = val
+	}
+	rtn := make([]string, 0, len(envMap))
+	for key, val := range envMap {
+		rtn = append(rtn, fmt.Sprintf("%s=%s", key, val))
+	}
+	return rtn
 }
 
 func (jm *JobCmd) waitForProcess() {

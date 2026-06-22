@@ -65,6 +65,9 @@ func init() {
 	jobcontroller.OnConnectionUpFn = func(ctx context.Context, connName string) {
 		Manager.OnConnectionUp(ctx, connName)
 	}
+	jobcontroller.GetSessionDaemonBlocksFn = func(daemonId string) []string {
+		return Manager.GetBlocksForDaemon(daemonId)
+	}
 }
 
 func (sd *SessionDaemon) GetNextInputSeq() (string, int) {
