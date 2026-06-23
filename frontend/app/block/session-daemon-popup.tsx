@@ -61,7 +61,7 @@ export function SessionDaemonPopup({ state }: SessionDaemonPopupProps) {
                             padding: "1px 7px",
                         }}
                     >
-                        {state.sessions.length}
+                        {state.sameConnSessions.length}
                     </span>
                 </div>
                 <SessionCreateRow state={state} />
