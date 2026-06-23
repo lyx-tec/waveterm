@@ -361,14 +361,10 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
     React.useEffect(() => {
         const termWrap = model.termRef.current;
         const daemonId = blockData?.meta?.["session:daemonid"];
-        const blockJobId = blockData?.jobid;
-        console.log("[term:daemon-effect] block=%s daemon=%s blockJob=%s zoneId=%s",
-            blockId, daemonId || "(none)", blockJobId || "(none)", termWrap?.zoneId || "(no-termwrap)");
         if (termWrap == null) {
             return;
         }
         if (!daemonId) {
-            console.log("[term:daemon-effect] block=%s no daemon, detaching zoneId=%s", blockId, termWrap.zoneId);
             fireAndForget(termWrap.detachFromDaemon.bind(termWrap));
             return undefined;
         }
@@ -384,21 +380,14 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
                     // This handles the race where SessionAttach sends the WaveObj update
                     // before the job is started by the resync controller (~20ms window).
                     if (info.status === "init" && retry < 15) {
-                        console.log("[term:daemon-effect] block=%s daemon=%s jobId not ready, will retry (attempt %d, status=%s)",
-                            blockId, daemonId, retry, info.status);
                         retryTimer = setTimeout(() => tryAttach(retry + 1), 200);
                         return;
                     }
-                    console.log("[term:daemon-effect] block=%s daemon=%s jobId not ready after %d retries, info=%o",
-                        blockId, daemonId, retry, info);
                     return;
                 }
                 if (termWrap.zoneId === info.jobid) {
-                    console.log("[term:daemon-effect] block=%s zoneId already=%s, skipping attach", blockId, info.jobid);
                     return;
                 }
-                console.log("[term:daemon-effect] block=%s attaching zoneId %s -> %s",
-                    blockId, termWrap.zoneId, info.jobid);
                 await termWrap.attachToDaemon(info.jobid);
             } catch (e) {
                 if (!cancelled) {

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -27,7 +26,9 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
 	"github.com/wavetermdev/waveterm/pkg/wps"
+	"github.com/wavetermdev/waveterm/pkg/wshrpc"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc/wshclient"
+	"github.com/wavetermdev/waveterm/pkg/wshutil"
 	"github.com/wavetermdev/waveterm/pkg/wslconn"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
@@ -340,14 +341,11 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 	// Check if we need to start/restart
 	status := controller.GetRuntimeStatus()
 	if status.ShellProcStatus == Status_Running {
-		// For SessionDaemonController, verify the job is still alive.
-		// The remote job manager may have died, leaving the daemon with a stale JobId.
-		// If so, clear the JobId so Start() runs again on the next ResyncController call.
 		if sdc, ok := controller.(*SessionDaemonController); ok {
 			if daemon := sessiondaemon.Manager.Get(sdc.DaemonId); daemon != nil && daemon.JobId != "" {
-				dbDaemon, dbErr := wstore.DBMustGet[*waveobj.SessionDaemon](ctx, sdc.DaemonId)
-				if dbErr != nil {
-					log.Printf("[sessiondaemon] resync: daemon=%s block=%s missing DB record, falling back to shell: %v", sdc.DaemonId, blockId, dbErr)
+				ensureResult, err := sessiondaemon.Manager.EnsureJobState(ctx, sdc.DaemonId, rtOpts, false)
+				if err != nil {
+					log.Printf("[sessiondaemon] resync: daemon=%s block=%s ensure failed, falling back to shell: %v", sdc.DaemonId, blockId, err)
 					err = fallbackSessionDaemonToShell(ctx, sdc.DaemonId, blockId)
 					if err != nil {
 						return err
@@ -356,26 +354,18 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 					daemonId = ""
 					controller = replaceBlockControllerWithShell(tabId, blockId, controllerName, connName)
 					status = controller.GetRuntimeStatus()
-				} else {
-					jobState, stateErr := sessiondaemon.ClassifyJobManagerState(ctx, dbDaemon)
-					if stateErr != nil {
-						return fmt.Errorf("check session daemon job manager: %w", stateErr)
+				} else if ensureResult.Action == sessiondaemon.DaemonEnsure_Fallback {
+					log.Printf("[sessiondaemon] resync: daemon=%s block=%s job manager gone, falling back to shell", sdc.DaemonId, blockId)
+					err = fallbackSessionDaemonToShell(ctx, sdc.DaemonId, blockId)
+					if err != nil {
+						return err
 					}
-					if jobState == sessiondaemon.JobManagerState_Dead {
-						log.Printf("[sessiondaemon] resync: daemon=%s block=%s job manager gone, falling back to shell", sdc.DaemonId, blockId)
-						err = fallbackSessionDaemonToShell(ctx, sdc.DaemonId, blockId)
-						if err != nil {
-							return err
-						}
-						daemonId = ""
-						existing = nil
-						controller = replaceBlockControllerWithShell(tabId, blockId, controllerName, connName)
-						status = controller.GetRuntimeStatus()
-					} else if jobState == sessiondaemon.JobManagerState_Unknown {
-						log.Printf("[sessiondaemon] resync: daemon=%s block=%s job state unknown, waiting", sdc.DaemonId, blockId)
-					} else {
-						log.Printf("[sessiondaemon] resync: daemon=%s block=%s job=%s alive, skipping", sdc.DaemonId, blockId, daemon.JobId)
-					}
+					daemonId = ""
+					existing = nil
+					controller = replaceBlockControllerWithShell(tabId, blockId, controllerName, connName)
+					status = controller.GetRuntimeStatus()
+				} else if ensureResult.Action == sessiondaemon.DaemonEnsure_Wait {
+					log.Printf("[sessiondaemon] resync: daemon=%s block=%s job state unknown, waiting", sdc.DaemonId, blockId)
 				}
 			}
 		}
@@ -417,17 +407,11 @@ func stopBlockController(blockId string) {
 	if controller == nil {
 		return
 	}
-	stackBuf := make([]byte, 4096)
-	stackLen := runtime.Stack(stackBuf, false)
-	log.Printf("[sessiondaemon] stopBlockController: block=%s stack:\n%s", blockId, string(stackBuf[:stackLen]))
 	controller.Stop(true, Status_Done, true)
 	wstore.DeleteRTInfo(waveobj.MakeORef(waveobj.OType_Block, blockId))
 }
 
 func DestroyBlockController(blockId string) {
-	stackBuf := make([]byte, 4096)
-	stackLen := runtime.Stack(stackBuf, false)
-	log.Printf("[sessiondaemon] DestroyBlockController: block=%s stack:\n%s", blockId, string(stackBuf[:stackLen]))
 	stopBlockController(blockId)
 	deleteController(blockId)
 }
@@ -687,4 +671,20 @@ func makeSwapToken(ctx context.Context, logCtx context.Context, blockId string, 
 	}
 	token.ScriptText = getCustomInitScript(logCtx, blockMeta, remoteName, shellType)
 	return token
+}
+
+func attachRpcContextToSwapToken(swapToken *shellutil.TokenSwapEntry, blockId string, connName string, sockName string) error {
+	rpcContext := wshrpc.RpcContext{
+		ProcRoute: true,
+		SockName:  sockName,
+		BlockId:   blockId,
+		Conn:      connName,
+	}
+	jwtStr, err := wshutil.MakeClientJWTToken(rpcContext)
+	if err != nil {
+		return fmt.Errorf("error making jwt token: %w", err)
+	}
+	swapToken.RpcContext = &rpcContext
+	swapToken.Env[wshutil.WaveJwtTokenVarName] = jwtStr
+	return nil
 }
