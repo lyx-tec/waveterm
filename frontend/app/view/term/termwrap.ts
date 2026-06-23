@@ -184,6 +184,7 @@ export class TermWrap {
     tabId: string;
     blockId: string;
     zoneId: string;
+    zoneLoadVersion: number;
     ptyOffset: number;
     dataBytesProcessed: number;
     terminal: Terminal;
@@ -242,6 +243,7 @@ export class TermWrap {
         this.tabId = tabId;
         this.blockId = blockId;
         this.zoneId = blockId;
+        this.zoneLoadVersion = 0;
         this.sendDataHandler = waveOptions.sendDataHandler;
         this.nodeModel = waveOptions.nodeModel;
         this.ptyOffset = 0;
@@ -438,12 +440,33 @@ export class TermWrap {
         return this.zoneId;
     }
 
-    async attachToDaemon(_jobId: string): Promise<void> {
-        this.zoneId = this.blockId;
+    async switchZone(zoneId: string): Promise<void> {
+        if (!zoneId || this.zoneId === zoneId) {
+            return;
+        }
+        this._mainFileSub?.unsubscribe();
+        this._mainFileSub = null;
+        this.mainFileSubject?.release();
+
+        this.zoneId = zoneId;
+        this.zoneLoadVersion++;
+        this.ptyOffset = 0;
+        this.dataBytesProcessed = 0;
+        this.heldData = [];
+        this.syntheticAltScreenTracker.reset();
+        this.terminal.clear();
+        this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
+        this._mainFileSub = this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
+        await this.loadInitialTerminalData();
+        this.terminal.scrollToBottom();
+    }
+
+    async attachToDaemon(jobId: string): Promise<void> {
+        await this.switchZone(jobId);
     }
 
     async detachFromDaemon(): Promise<void> {
-        this.zoneId = this.blockId;
+        await this.switchZone(this.blockId);
     }
 
     setCursorStyle(cursorStyle: string) {
@@ -653,8 +676,12 @@ export class TermWrap {
     async loadInitialTerminalData(): Promise<void> {
         const startTs = Date.now();
         const zoneId = this.getZoneId();
+        const zoneLoadVersion = this.zoneLoadVersion;
         const { data: cacheData, fileInfo: cacheFile } = await fetchWaveFile(zoneId, TermCacheFileName);
         let ptyOffset = 0;
+        if (zoneId !== this.getZoneId() || zoneLoadVersion !== this.zoneLoadVersion) {
+            return;
+        }
         if (cacheFile != null) {
             ptyOffset = cacheFile.meta["ptyoffset"] ?? 0;
             if (cacheData.byteLength > 0) {
@@ -676,6 +703,9 @@ export class TermWrap {
             }
         }
         const { data: mainData, fileInfo: mainFile } = await fetchWaveFile(zoneId, TermFileName, ptyOffset);
+        if (zoneId !== this.getZoneId() || zoneLoadVersion !== this.zoneLoadVersion) {
+            return;
+        }
         console.log(
             `terminal loaded cachefile:${cacheData?.byteLength ?? 0} main:${mainData?.byteLength ?? 0} bytes, ${Date.now() - startTs}ms`
         );
