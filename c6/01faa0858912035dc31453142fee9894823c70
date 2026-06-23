@@ -1,0 +1,22 @@
+pkg/wshrpc/wshremote/wshremote_job.go
+  s_252c8aa7b5fb8d::t_0cc1771aab9978 270,344
+pkg/jobcontroller/jobcontroller.go
+  s_252c8aa7b5fb8d::t_0cc1771aab9978 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "c601faa0858912035dc31453142fee9894823c70",
+  "prompts": {},
+  "logical_commit_id": "c601faa0858912035dc31453142fee9894823c70",
+  "sessions": {
+    "s_252c8aa7b5fb8d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee537-a79e-7f02-8aa6-ab762bdbbb7a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+frontend/app/view/term/termwrap.ts
+  s_e70a004e9f1d21::t_03ceefa52afdc6 187,246,452,679,682-684,706-708
+  s_e70a004e9f1d21::t_0c26dd92b11cdc 443-451,453-465,469
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.11",
+  "base_commit_sha": "cb65478b4eb8b927a6f3b1bc9e71e36fd7c210fa",
+  "prompts": {},
+  "logical_commit_id": "cb65478b4eb8b927a6f3b1bc9e71e36fd7c210fa",
+  "sessions": {
+    "s_e70a004e9f1d21": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef462-283d-7032-b52b-0fcc5dddc317",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}

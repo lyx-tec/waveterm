@@ -1,0 +1,55 @@
+pkg/sessiondaemon/reaper.go
+  s_48c020e05d48e3::t_d1262b5d7259aa 1-179
+frontend/app/block/session-daemon-rows.tsx
+  s_48c020e05d48e3::t_163f42f53c606f 1-286
+pkg/wshrpc/wshserver/wshserver_session.go
+  s_48c020e05d48e3::t_47f12bc80a9357 1-260
+pkg/sessiondaemon/sessiondaemon.go
+  s_48c020e05d48e3::t_3b688e8a6f5a08 412,446-449
+  s_48c020e05d48e3::t_73f3b1b93b921e 39-45,60-64,410-411,413-445,450-460
+  s_48c020e05d48e3::t_6d4012c80e61cc 594-595,600
+  s_48c020e05d48e3::t_4756195b56339c 221-270
+  s_48c020e05d48e3::t_173a445a2142cb 373,512,516,524-529
+  s_48c020e05d48e3::t_c95d7f64053d5a 589
+frontend/app/block/session-daemon-types.ts
+  s_48c020e05d48e3::t_ee9330fd2ef81e 1-19
+pkg/blockcontroller/blockcontroller.go
+  s_48c020e05d48e3::t_75e252ff7cd46d 29,31
+  s_48c020e05d48e3::t_70060658038079 347-348,357-361,363-368
+  s_48c020e05d48e3::t_c3128c395df0b0 346
+  s_48c020e05d48e3::t_c47f5e83688041 675-689
+pkg/blockcontroller/shellcontroller.go
+  s_48c020e05d48e3::t_670a72c9e69680 469
+  s_48c020e05d48e3::t_9730b027b90831 471
+frontend/app/block/session-daemon-indicator.tsx
+  s_48c020e05d48e3::t_5f31b6c36b44da 4-5,13,22,24-26,28-29,31,39
+frontend/app/block/session-daemon-hooks.ts
+  s_48c020e05d48e3::t_101c85957a00f6 11
+  s_48c020e05d48e3::t_705e173534ff2e 178
+  s_48c020e05d48e3::t_69441ce273e23d 1-10,12-177,179-234
+frontend/app/block/session-daemon-popup.tsx
+  s_48c020e05d48e3::t_ee053ce08be37e 1-5,7-79
+  s_48c020e05d48e3::t_aaea4ece8106b4 6
+pkg/blockcontroller/sessiondaemoncontroller.go
+  s_48c020e05d48e3::t_ae84cac12bdcab 73
+  s_48c020e05d48e3::t_04498f47f2ad7a 108
+  s_48c020e05d48e3::t_4324bbad07d431 160,162
+  s_48c020e05d48e3::t_fa77c200296ea1 75,77-78,82,84-88,91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.11",
+  "base_commit_sha": "9ad0a0bb369ac65874a1450cc2636168be917ccd",
+  "prompts": {},
+  "logical_commit_id": "9ad0a0bb369ac65874a1450cc2636168be917ccd",
+  "sessions": {
+    "s_48c020e05d48e3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eef3f-ef18-7c20-bcd1-9e02224e3224",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}

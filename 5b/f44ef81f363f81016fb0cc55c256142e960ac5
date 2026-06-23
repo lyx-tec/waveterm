@@ -1,0 +1,32 @@
+pkg/blockcontroller/sessiondaemoncontroller.go
+  s_252c8aa7b5fb8d::t_e05e22a012751e 86,90,94,96
+  s_252c8aa7b5fb8d::t_38b3e89d8ac771 112
+  s_252c8aa7b5fb8d::t_c06f53276181c8 87-88,95
+  s_252c8aa7b5fb8d::t_94f15f7c9e6408 113
+pkg/sessiondaemon/sessiondaemon.go
+  s_252c8aa7b5fb8d::t_89995d79fda85d 529,531,534-536,546-547,551-552
+  s_252c8aa7b5fb8d::t_16c331819049e2 341-346,352-356
+  s_252c8aa7b5fb8d::t_70148cb5f34f27 33-38,337,358,361-392
+  s_252c8aa7b5fb8d::t_e6882e7c2b9d75 357
+pkg/blockcontroller/blockcontroller.go
+  s_252c8aa7b5fb8d::t_3d9a9059d4599e 9,49,360,364,371-372,374,397-399,442-444,471-479
+  s_252c8aa7b5fb8d::t_fb9224714bd389 50,228,235,361-362,375
+  s_252c8aa7b5fb8d::t_d2fcb309300ff0 357
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "5bf44ef81f363f81016fb0cc55c256142e960ac5",
+  "prompts": {},
+  "logical_commit_id": "5bf44ef81f363f81016fb0cc55c256142e960ac5",
+  "sessions": {
+    "s_252c8aa7b5fb8d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee537-a79e-7f02-8aa6-ab762bdbbb7a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+pkg/service/blockservice/blockservice.go
+  s_a20d2c35a011d5::t_0ea2dcd877f4dc 8,41-42,46-47,55-56,64,69-86
+pkg/jobcontroller/jobcontroller.go
+  s_a20d2c35a011d5::t_b3d1aa5f78ea37 83-86,836-851,853-857
+frontend/app/store/services.ts
+  s_a20d2c35a011d5::t_3e0514d1bd438d 33-34
+frontend/app/view/term/termwrap.ts
+  s_a20d2c35a011d5::t_4df77ace3291a7 643-644,648,650
+  s_a20d2c35a011d5::t_585425ba3c362a 56-59,61-62,615-616,628,632-633,639-642,645-647,649
+  s_a20d2c35a011d5::t_c5e89e773c7f72 441
+  s_a20d2c35a011d5::t_8e4613253c09eb 442
+  s_a20d2c35a011d5::t_eb35dcf71ce13a 60
+  s_a20d2c35a011d5::t_15d58a6b87b9c3 730
+  s_a20d2c35a011d5::t_5629ec6670d1d9 87-182,232
+  s_a20d2c35a011d5::t_c8f110f592f06f 85-86
+pkg/sessiondaemon/sessiondaemon.go
+  s_a20d2c35a011d5::t_714a22dc025492 68-70
+pkg/jobmanager/jobcmd.go
+  s_a20d2c35a011d5::t_451009e43dad81 12,58,70-88
+  s_a20d2c35a011d5::t_d2752a337886ae 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "d1dfae4ab63e77157ef4651df7b4ba7354ab32f9",
+  "prompts": {},
+  "logical_commit_id": "d1dfae4ab63e77157ef4651df7b4ba7354ab32f9",
+  "sessions": {
+    "s_a20d2c35a011d5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee77e-409a-7122-9c52-bc91d8bd3ccd",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}
