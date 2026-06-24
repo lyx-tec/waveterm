@@ -178,9 +178,36 @@ func (ws *WshServer) UpdateWorkspaceTabIdsCommand(ctx context.Context, workspace
 func (ws *WshServer) SetMetaCommand(ctx context.Context, data wshrpc.CommandSetMetaData) error {
 	log.Printf("SetMetaCommand: %s | %v\n", data.ORef, data.Meta)
 	oref := data.ORef
+	connectionChanged := false
+	oldSessionDaemonId := ""
+	if oref.OType == waveobj.OType_Block {
+		if nextConnAny, ok := data.Meta[waveobj.MetaKey_Connection]; ok {
+			blockData, err := wstore.DBMustGet[*waveobj.Block](ctx, oref.OID)
+			if err != nil {
+				return fmt.Errorf("error getting block before meta update: %w", err)
+			}
+			curConn := blockData.Meta.GetString(waveobj.MetaKey_Connection, "")
+			nextConn, _ := nextConnAny.(string)
+			connectionChanged = curConn != nextConn
+			oldSessionDaemonId = blockData.Meta.GetString(waveobj.MetaKey_SessionDaemonId, "")
+		}
+	}
 	err := wstore.UpdateObjectMeta(ctx, oref, data.Meta, false)
 	if err != nil {
 		return fmt.Errorf("error updating object meta: %w", err)
+	}
+	if connectionChanged {
+		if oldSessionDaemonId != "" {
+			err = wstore.DBUpdateFn(ctx, oref.OID, func(block *waveobj.Block) {
+				delete(block.Meta, waveobj.MetaKey_SessionDaemonId)
+				block.Meta[blockcontroller.MetaKey_SessionNoAutoCreate] = true
+				block.JobId = ""
+			})
+			if err != nil {
+				return fmt.Errorf("error clearing session daemon on connection change: %w", err)
+			}
+		}
+		resyncBlockController(ctx, oref.OID)
 	}
 	wcore.SendWaveObjUpdate(oref)
 	return nil
