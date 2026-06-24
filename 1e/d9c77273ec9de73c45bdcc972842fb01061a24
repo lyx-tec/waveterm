@@ -1,0 +1,20 @@
+pkg/wshrpc/wshserver/wshserver.go
+  s_76c02510804b17::t_415ed526b39670 181-194,198-210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.11",
+  "base_commit_sha": "1ed9c77273ec9de73c45bdcc972842fb01061a24",
+  "prompts": {},
+  "logical_commit_id": "1ed9c77273ec9de73c45bdcc972842fb01061a24",
+  "sessions": {
+    "s_76c02510804b17": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef8b2-2141-7942-b252-a126d3150bea",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}
