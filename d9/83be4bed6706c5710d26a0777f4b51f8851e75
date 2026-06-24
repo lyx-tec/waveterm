@@ -1,0 +1,21 @@
+frontend/app/block/session-daemon-popup.tsx
+  s_a950a98b24fbc5::t_bf422bb01ba992 8-10,54-61,63-64,66-72,75-88
+  s_a950a98b24fbc5::t_94291d1a310d22 62,65,73-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.11",
+  "base_commit_sha": "d983be4bed6706c5710d26a0777f4b51f8851e75",
+  "prompts": {},
+  "logical_commit_id": "d983be4bed6706c5710d26a0777f4b51f8851e75",
+  "sessions": {
+    "s_a950a98b24fbc5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef703-bdba-7631-b1a3-7b9e75defce6",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}
