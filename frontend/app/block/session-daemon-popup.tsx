@@ -5,6 +5,9 @@ import { FloatingPortal } from "@floating-ui/react";
 import { SessionDaemonIndicatorState } from "./session-daemon-hooks";
 import { SessionCreateRow, SessionRow } from "./session-daemon-rows";
 
+const SessionDescription =
+    "Shared Session introduces persistent, reusable SSH terminal sessions that are no longer tied to a single block. Users can name sessions, attach multiple blocks on the same connection, switch between active sessions from the block header, and keep remote work available across block changes, reconnects, and idle periods with automatic cleanup.";
+
 const popupStyle = {
     zIndex: 100,
     width: "min(420px, calc(100vw - 24px))",
@@ -48,6 +51,41 @@ export function SessionDaemonPopup({ state }: SessionDaemonPopupProps) {
                         <i className="fa-sharp fa-solid fa-link" style={{ color: "#38bdf8", fontSize: 12 }} />
                         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
                             Sessions
+                        </span>
+                        <span
+                            className="group"
+                            style={{
+                                position: "relative",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                color: "var(--text-muted)",
+                                cursor: "default",
+                                fontSize: 12,
+                            }}
+                            aria-label="Shared session description"
+                        >
+                            <i className="fa-sharp fa-solid fa-circle-question" />
+                            <span
+                                className="hidden group-hover:block"
+                                style={{
+                                    position: "absolute",
+                                    top: 18,
+                                    left: -52,
+                                    width: "min(300px, calc(100vw - 56px))",
+                                    padding: "8px 10px",
+                                    borderRadius: 8,
+                                    border: "1px solid rgba(148, 163, 184, 0.18)",
+                                    background: "color-mix(in srgb, var(--bg-secondary, #1e1e2e) 98%, black)",
+                                    boxShadow: "0 12px 28px rgba(0,0,0,0.36)",
+                                    color: "var(--text-primary)",
+                                    fontSize: 11,
+                                    lineHeight: 1.45,
+                                    fontWeight: 400,
+                                    zIndex: 1,
+                                }}
+                            >
+                                {SessionDescription}
+                            </span>
                         </span>
                     </div>
                     <span
