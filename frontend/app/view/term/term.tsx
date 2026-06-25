@@ -359,6 +359,18 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
     }, [termMode]);
 
     React.useEffect(() => {
+        if (!isFocused || termWrapInst == null || !termWrapInst.isAttachedToDaemon()) {
+            return;
+        }
+        const rafId = requestAnimationFrame(() => {
+            fireAndForget(() => termWrapInst.syncActiveControllerTermSize());
+        });
+        return () => {
+            cancelAnimationFrame(rafId);
+        };
+    }, [isFocused, termWrapInst]);
+
+    React.useEffect(() => {
         const termWrap = model.termRef.current;
         const daemonId = blockData?.meta?.["session:daemonid"];
         if (termWrap == null) {
