@@ -670,6 +670,12 @@ func ReadAppFileCommand(w *wshutil.WshRpc, data wshrpc.CommandReadAppFileData, o
 	return resp, err
 }
 
+// command "recordsessionactivity", wshserver.RecordSessionActivityCommand
+func RecordSessionActivityCommand(w *wshutil.WshRpc, data wshrpc.CommandRecordSessionActivityData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "recordsessionactivity", data, opts)
+	return err
+}
+
 // command "recordtevent", wshserver.RecordTEventCommand
 func RecordTEventCommand(w *wshutil.WshRpc, data telemetrydata.TEvent, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "recordtevent", data, opts)
@@ -827,6 +833,48 @@ func RouteUnannounceCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 // command "sendtelemetry", wshserver.SendTelemetryCommand
 func SendTelemetryCommand(w *wshutil.WshRpc, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "sendtelemetry", nil, opts)
+	return err
+}
+
+// command "sessionattach", wshserver.SessionAttachCommand
+func SessionAttachCommand(w *wshutil.WshRpc, data wshrpc.CommandSessionAttachData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "sessionattach", data, opts)
+	return err
+}
+
+// command "sessioncreate", wshserver.SessionCreateCommand
+func SessionCreateCommand(w *wshutil.WshRpc, data wshrpc.CommandSessionCreateData, opts *wshrpc.RpcOpts) (*wshrpc.SessionInfoRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.SessionInfoRtnData](w, "sessioncreate", data, opts)
+	return resp, err
+}
+
+// command "sessiondelete", wshserver.SessionDeleteCommand
+func SessionDeleteCommand(w *wshutil.WshRpc, data wshrpc.CommandSessionDeleteData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "sessiondelete", data, opts)
+	return err
+}
+
+// command "sessiondetach", wshserver.SessionDetachCommand
+func SessionDetachCommand(w *wshutil.WshRpc, data wshrpc.CommandSessionDetachData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "sessiondetach", data, opts)
+	return err
+}
+
+// command "sessioninfo", wshserver.SessionInfoCommand
+func SessionInfoCommand(w *wshutil.WshRpc, data wshrpc.CommandSessionInfoData, opts *wshrpc.RpcOpts) (*wshrpc.SessionInfoRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[*wshrpc.SessionInfoRtnData](w, "sessioninfo", data, opts)
+	return resp, err
+}
+
+// command "sessionlist", wshserver.SessionListCommand
+func SessionListCommand(w *wshutil.WshRpc, data wshrpc.CommandSessionListData, opts *wshrpc.RpcOpts) ([]wshrpc.SessionInfoRtnData, error) {
+	resp, err := sendRpcRequestCallHelper[[]wshrpc.SessionInfoRtnData](w, "sessionlist", data, opts)
+	return resp, err
+}
+
+// command "sessiontag", wshserver.SessionTagCommand
+func SessionTagCommand(w *wshutil.WshRpc, data wshrpc.CommandSessionTagData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "sessiontag", data, opts)
 	return err
 }
 

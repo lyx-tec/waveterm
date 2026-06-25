@@ -211,6 +211,16 @@ type WshRpcInterface interface {
 	JobControllerDetachJobCommand(ctx context.Context, jobId string) error
 	JobControllerGetAllJobManagerStatusCommand(ctx context.Context) ([]*JobManagerStatusUpdate, error)
 	BlockJobStatusCommand(ctx context.Context, blockId string) (*BlockJobStatusData, error)
+
+	// session daemon
+	SessionCreateCommand(ctx context.Context, data CommandSessionCreateData) (*SessionInfoRtnData, error)
+	SessionDeleteCommand(ctx context.Context, data CommandSessionDeleteData) error
+	SessionListCommand(ctx context.Context, data CommandSessionListData) ([]SessionInfoRtnData, error)
+	SessionAttachCommand(ctx context.Context, data CommandSessionAttachData) error
+	SessionDetachCommand(ctx context.Context, data CommandSessionDetachData) error
+	SessionInfoCommand(ctx context.Context, data CommandSessionInfoData) (*SessionInfoRtnData, error)
+	SessionTagCommand(ctx context.Context, data CommandSessionTagData) error
+	RecordSessionActivityCommand(ctx context.Context, data CommandRecordSessionActivityData) error
 }
 
 // for frontend
@@ -733,24 +743,26 @@ type CommandStartJobData struct {
 }
 
 type CommandRemoteStartJobData struct {
-	Cmd                string            `json:"cmd"`
-	Args               []string          `json:"args"`
-	Env                map[string]string `json:"env"`
-	TermSize           waveobj.TermSize  `json:"termsize"`
-	StreamMeta         *StreamMeta       `json:"streammeta,omitempty"`
-	JobAuthToken       string            `json:"jobauthtoken"`
-	JobId              string            `json:"jobid"`
-	MainServerJwtToken string            `json:"mainserverjwttoken"`
-	ClientId           string            `json:"clientid"`
-	PublicKeyBase64    string            `json:"publickeybase64"`
+	Cmd                      string            `json:"cmd"`
+	Args                     []string          `json:"args"`
+	Env                      map[string]string `json:"env"`
+	TermSize                 waveobj.TermSize  `json:"termsize"`
+	StreamMeta               *StreamMeta       `json:"streammeta,omitempty"`
+	JobAuthToken             string            `json:"jobauthtoken"`
+	JobId                    string            `json:"jobid"`
+	MainServerJwtToken       string            `json:"mainserverjwttoken"`
+	ClientId                 string            `json:"clientid"`
+	PublicKeyBase64          string            `json:"publickeybase64"`
+	RemoteIdleTimeoutSeconds int64             `json:"remoteidletimeoutseconds,omitempty"`
 }
 
 type CommandRemoteReconnectToJobManagerData struct {
-	JobId              string `json:"jobid"`
-	JobAuthToken       string `json:"jobauthtoken"`
-	MainServerJwtToken string `json:"mainserverjwttoken"`
-	JobManagerPid      int    `json:"jobmanagerpid"`
-	JobManagerStartTs  int64  `json:"jobmanagerstartts"`
+	JobId                    string `json:"jobid"`
+	JobAuthToken             string `json:"jobauthtoken"`
+	MainServerJwtToken       string `json:"mainserverjwttoken"`
+	JobManagerPid            int    `json:"jobmanagerpid"`
+	JobManagerStartTs        int64  `json:"jobmanagerstartts"`
+	RemoteIdleTimeoutSeconds int64  `json:"remoteidletimeoutseconds,omitempty"`
 }
 
 type CommandRemoteReconnectToJobManagerRtnData struct {
@@ -924,4 +936,58 @@ type CommandRemoteProcessListData struct {
 type CommandRemoteProcessSignalData struct {
 	Pid    int32  `json:"pid"`
 	Signal string `json:"signal"`
+}
+
+// session daemon
+type CommandSessionCreateData struct {
+	Name        string `json:"name,omitempty"`
+	Connection  string `json:"connection,omitempty"`
+	IdleTimeout int64  `json:"idletimeout,omitempty"`
+}
+
+type CommandSessionDeleteData struct {
+	DaemonId string `json:"daemonid"`
+}
+
+type CommandSessionListData struct {
+	ShowAll bool `json:"showall,omitempty"`
+}
+
+type CommandSessionAttachData struct {
+	DaemonId        string `json:"daemonid"`
+	BlockId         string `json:"blockid"`
+	CurrentDaemonId string `json:"currentdaemonid,omitempty"`
+}
+
+type CommandSessionDetachData struct {
+	DaemonId string `json:"daemonid"`
+	BlockId  string `json:"blockid,omitempty"`
+}
+
+type CommandSessionInfoData struct {
+	DaemonId string `json:"daemonid"`
+}
+
+type CommandSessionTagData struct {
+	DaemonId string `json:"daemonid"`
+	Name     string `json:"name"`
+}
+
+type CommandRecordSessionActivityData struct {
+	DaemonId string `json:"daemonid"`
+}
+
+type SessionInfoRtnData struct {
+	DaemonId    string   `json:"daemonid"`
+	Name        string   `json:"name"`
+	Connection  string   `json:"connection"`
+	JobId       string   `json:"jobid,omitempty"`
+	IsAnonymous bool     `json:"isanonymous"`
+	Status      string   `json:"status"`
+	Cwd         string   `json:"cwd,omitempty"`
+	CreatedAt   int64    `json:"createdat"`
+	IdleTimeout int64    `json:"idletimeout"`
+	IdleSince   int64    `json:"idlesince,omitempty"`
+	LastActiveAt int64   `json:"lastactiveat,omitempty"`
+	Blocks      []string `json:"blocks,omitempty"`
 }

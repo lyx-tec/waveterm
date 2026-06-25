@@ -301,11 +301,15 @@ func StartRemoteShellProcNoWsh(ctx context.Context, termSize waveobj.TermSize, c
 
 	remoteStdinRead, remoteStdinWriteOurs, err := os.Pipe()
 	if err != nil {
+		session.Close()
 		return nil, err
 	}
 
 	remoteStdoutReadOurs, remoteStdoutWrite, err := os.Pipe()
 	if err != nil {
+		remoteStdinRead.Close()
+		remoteStdinWriteOurs.Close()
+		session.Close()
 		return nil, err
 	}
 
@@ -313,22 +317,33 @@ func StartRemoteShellProcNoWsh(ctx context.Context, termSize waveobj.TermSize, c
 		remoteStdinWrite: remoteStdinWriteOurs,
 		remoteStdoutRead: remoteStdoutReadOurs,
 	}
+	cleanup := func() {
+		pipePty.Close()
+		remoteStdinRead.Close()
+		remoteStdoutWrite.Close()
+		session.Close()
+	}
 	if termSize.Rows == 0 || termSize.Cols == 0 {
 		termSize.Rows = shellutil.DefaultTermRows
 		termSize.Cols = shellutil.DefaultTermCols
 	}
 	if termSize.Rows <= 0 || termSize.Cols <= 0 {
+		cleanup()
 		return nil, fmt.Errorf("invalid term size: %v", termSize)
 	}
 	session.Stdin = remoteStdinRead
 	session.Stdout = remoteStdoutWrite
 	session.Stderr = remoteStdoutWrite
 
-	session.RequestPty("xterm-256color", termSize.Rows, termSize.Cols, nil)
+	err = session.RequestPty("xterm-256color", termSize.Rows, termSize.Cols, nil)
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
 	sessionWrap := MakeSessionWrap(session, "", pipePty)
 	err = session.Shell()
 	if err != nil {
-		pipePty.Close()
+		cleanup()
 		return nil, err
 	}
 	return &ShellProc{Cmd: sessionWrap, ConnName: conn.GetName(), CloseOnce: &sync.Once{}, DoneCh: make(chan any)}, nil
@@ -419,11 +434,15 @@ func StartRemoteShellProc(ctx context.Context, logCtx context.Context, termSize 
 	}
 	remoteStdinRead, remoteStdinWriteOurs, err := os.Pipe()
 	if err != nil {
+		session.Close()
 		return nil, err
 	}
 
 	remoteStdoutReadOurs, remoteStdoutWrite, err := os.Pipe()
 	if err != nil {
+		remoteStdinRead.Close()
+		remoteStdinWriteOurs.Close()
+		session.Close()
 		return nil, err
 	}
 
@@ -431,11 +450,18 @@ func StartRemoteShellProc(ctx context.Context, logCtx context.Context, termSize 
 		remoteStdinWrite: remoteStdinWriteOurs,
 		remoteStdoutRead: remoteStdoutReadOurs,
 	}
+	cleanup := func() {
+		pipePty.Close()
+		remoteStdinRead.Close()
+		remoteStdoutWrite.Close()
+		session.Close()
+	}
 	if termSize.Rows == 0 || termSize.Cols == 0 {
 		termSize.Rows = shellutil.DefaultTermRows
 		termSize.Cols = shellutil.DefaultTermCols
 	}
 	if termSize.Rows <= 0 || termSize.Cols <= 0 {
+		cleanup()
 		return nil, fmt.Errorf("invalid term size: %v", termSize)
 	}
 	session.Stdin = remoteStdinRead
@@ -459,11 +485,15 @@ func StartRemoteShellProc(ctx context.Context, logCtx context.Context, termSize 
 		cmdCombined = fmt.Sprintf(`%s=%s %s`, wavebase.WaveJwtTokenVarName, jwtToken, cmdCombined)
 	}
 	shellutil.AddTokenSwapEntry(cmdOpts.SwapToken)
-	session.RequestPty("xterm-256color", termSize.Rows, termSize.Cols, nil)
+	err = session.RequestPty("xterm-256color", termSize.Rows, termSize.Cols, nil)
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
 	sessionWrap := MakeSessionWrap(session, cmdCombined, pipePty)
 	err = sessionWrap.Start()
 	if err != nil {
-		pipePty.Close()
+		cleanup()
 		return nil, err
 	}
 	return &ShellProc{Cmd: sessionWrap, ConnName: conn.GetName(), CloseOnce: &sync.Once{}, DoneCh: make(chan any)}, nil

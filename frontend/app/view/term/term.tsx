@@ -51,15 +51,19 @@ const TermResyncHandler = React.memo(({ blockId, model }: TerminalViewProps) => 
 
     React.useEffect(() => {
         if (!model.termRef.current?.hasResized) {
+            console.log("[TermResyncHandler] hasResized=false, skipping resync", blockId);
+            setLastConnStatus(connStatus);
             return;
         }
         const isConnected = connStatus?.status == "connected";
         const wasConnected = lastConnStatus?.status == "connected";
         const curConnName = connStatus?.connection;
         const lastConnName = lastConnStatus?.connection;
+        console.log("[TermResyncHandler] check", blockId, "cur:", connStatus?.status, "last:", lastConnStatus?.status, "conn:", curConnName);
         if (isConnected == wasConnected && curConnName == lastConnName) {
             return;
         }
+        console.log("[TermResyncHandler] triggering resync", blockId);
         model.termRef.current?.resyncController("resync handler");
         setLastConnStatus(connStatus);
     }, [connStatus]);
@@ -353,6 +357,64 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         }
         termModeRef.current = termMode;
     }, [termMode]);
+
+    React.useEffect(() => {
+        if (!isFocused || termWrapInst == null || !termWrapInst.isAttachedToDaemon()) {
+            return;
+        }
+        const rafId = requestAnimationFrame(() => {
+            fireAndForget(() => termWrapInst.syncActiveControllerTermSize());
+        });
+        return () => {
+            cancelAnimationFrame(rafId);
+        };
+    }, [isFocused, termWrapInst]);
+
+    React.useEffect(() => {
+        const termWrap = model.termRef.current;
+        const daemonId = blockData?.meta?.["session:daemonid"];
+        if (termWrap == null) {
+            return;
+        }
+        if (!daemonId) {
+            fireAndForget(termWrap.detachFromDaemon.bind(termWrap));
+            return undefined;
+        }
+        let cancelled = false;
+        let retryTimer: ReturnType<typeof setTimeout> | null = null;
+        const tryAttach = async (retry: number) => {
+            if (cancelled) return;
+            try {
+                const info = await RpcApi.SessionInfoCommand(TabRpcClient, { daemonid: daemonId });
+                if (cancelled) return;
+                if (!info.jobid) {
+                    // If the daemon is still initializing (job not started yet), retry.
+                    // This handles the race where SessionAttach sends the WaveObj update
+                    // before the job is started by the resync controller (~20ms window).
+                    if (info.status === "init" && retry < 15) {
+                        retryTimer = setTimeout(() => tryAttach(retry + 1), 200);
+                        return;
+                    }
+                    return;
+                }
+                if (termWrap.zoneId === info.jobid) {
+                    return;
+                }
+                await termWrap.attachToDaemon(info.jobid);
+            } catch (e) {
+                if (!cancelled) {
+                    console.log("error attaching terminal to session daemon", daemonId, e);
+                }
+            }
+        };
+        fireAndForget(() => tryAttach(0));
+        return () => {
+            cancelled = true;
+            if (retryTimer != null) {
+                clearTimeout(retryTimer);
+            }
+        };
+    }, [blockData?.meta?.["session:daemonid"], blockData?.jobid, termWrapInst]);
 
     React.useEffect(() => {
         if (isMI && isBasicTerm && isFocused && model.termRef.current != null) {

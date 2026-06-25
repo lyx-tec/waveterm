@@ -466,18 +466,10 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 			}
 		} else {
 			sockName := conn.GetDomainSocketName()
-			rpcContext := wshrpc.RpcContext{
-				ProcRoute: true,
-				SockName:  sockName,
-				BlockId:   bc.BlockId,
-				Conn:      conn.Opts.String(),
-			}
-			jwtStr, err := wshutil.MakeClientJWTToken(rpcContext)
+			err = attachRpcContextToSwapToken(swapToken, bc.BlockId, conn.Opts.String(), sockName)
 			if err != nil {
-				return nil, fmt.Errorf("error making jwt token: %w", err)
+				return nil, err
 			}
-			swapToken.RpcContext = &rpcContext
-			swapToken.Env[wshutil.WaveJwtTokenVarName] = jwtStr
 			shellProc, err = shellexec.StartRemoteShellProc(ctx, logCtx, rc.TermSize, cmdStr, cmdOpts, conn)
 			if err != nil {
 				conn.SetWshError(err)

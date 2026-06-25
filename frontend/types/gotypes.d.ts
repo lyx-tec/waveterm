@@ -528,6 +528,11 @@ declare global {
         modts?: number;
     };
 
+    // wshrpc.CommandRecordSessionActivityData
+    type CommandRecordSessionActivityData = {
+        daemonid: string;
+    };
+
     // wshrpc.CommandRemoteDisconnectFromJobManagerData
     type CommandRemoteDisconnectFromJobManagerData = {
         jobid: string;
@@ -582,6 +587,7 @@ declare global {
         mainserverjwttoken: string;
         jobmanagerpid: number;
         jobmanagerstartts: number;
+        remoteidletimeoutseconds?: number;
     };
 
     // wshrpc.CommandRemoteReconnectToJobManagerRtnData
@@ -603,6 +609,7 @@ declare global {
         mainserverjwttoken: string;
         clientid: string;
         publickeybase64: string;
+        remoteidletimeoutseconds?: number;
     };
 
     // wshrpc.CommandRemoteTerminateJobManagerData
@@ -633,6 +640,47 @@ declare global {
     // wshrpc.CommandRestartBuilderAndWaitData
     type CommandRestartBuilderAndWaitData = {
         builderid: string;
+    };
+
+    // wshrpc.CommandSessionAttachData
+    type CommandSessionAttachData = {
+        daemonid: string;
+        blockid: string;
+        currentdaemonid?: string;
+    };
+
+    // wshrpc.CommandSessionCreateData
+    type CommandSessionCreateData = {
+        name?: string;
+        connection?: string;
+        idletimeout?: number;
+    };
+
+    // wshrpc.CommandSessionDeleteData
+    type CommandSessionDeleteData = {
+        daemonid: string;
+    };
+
+    // wshrpc.CommandSessionDetachData
+    type CommandSessionDetachData = {
+        daemonid: string;
+        blockid?: string;
+    };
+
+    // wshrpc.CommandSessionInfoData
+    type CommandSessionInfoData = {
+        daemonid: string;
+    };
+
+    // wshrpc.CommandSessionListData
+    type CommandSessionListData = {
+        showall?: boolean;
+    };
+
+    // wshrpc.CommandSessionTagData
+    type CommandSessionTagData = {
+        daemonid: string;
+        name: string;
     };
 
     // wshrpc.CommandSetMetaData
@@ -1133,6 +1181,7 @@ declare global {
         "cmd:initscript.zsh"?: string;
         "cmd:initscript.pwsh"?: string;
         "cmd:initscript.fish"?: string;
+        "session:daemonid"?: string;
         "ai:*"?: boolean;
         "ai:preset"?: string;
         "ai:apitype"?: string;
@@ -1372,6 +1421,36 @@ declare global {
     type SecretMeta = {
         desc: string;
         optional: boolean;
+    };
+
+    // waveobj.SessionDaemon
+    type SessionDaemon = WaveObj & {
+        name?: string;
+        connection?: string;
+        jobid?: string;
+        isanonymous?: boolean;
+        status?: string;
+        cwd?: string;
+        createdat?: number;
+        idletimeout?: number;
+        idlesince?: number;
+        lastactiveat?: number;
+    };
+
+    // wshrpc.SessionInfoRtnData
+    type SessionInfoRtnData = {
+        daemonid: string;
+        name: string;
+        connection: string;
+        jobid?: string;
+        isanonymous: boolean;
+        status: string;
+        cwd?: string;
+        createdat: number;
+        idletimeout: number;
+        idlesince?: number;
+        lastactiveat?: number;
+        blocks?: string[];
     };
 
     // wconfig.SettingsType

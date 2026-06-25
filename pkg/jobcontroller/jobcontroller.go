@@ -30,7 +30,6 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 	"github.com/wavetermdev/waveterm/pkg/wavejwt"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
-	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wshrpc"
@@ -41,6 +40,7 @@ import (
 )
 
 const DefaultTimeout = 2 * time.Second
+const DefaultRemoteIdleTimeoutSeconds = 604800 // 7 days
 
 const (
 	JobManagerStatus_Init    = "init"
@@ -70,6 +70,19 @@ const MetaKey_TotalGap = "totalgap"
 const JobOutputFileName = "term"
 const AutoReconnectDelay = 1 * time.Second
 const AutoReconnectCooldown = 30 * time.Second
+
+// ClearSessionDaemonJobFn is set by sessiondaemon to handle cleaning
+// up daemon state when a remote job manager exits.  The sessiondaemon
+// package cannot be imported here (import cycle), so a callback is used.
+var ClearSessionDaemonJobFn func(ctx context.Context, jobId string)
+
+// OnConnectionUpFn is set by sessiondaemon to handle session daemon
+// state reconciliation when an SSH connection becomes ready.
+var OnConnectionUpFn func(ctx context.Context, connName string)
+
+// GetSessionDaemonBlocksFn is set by sessiondaemon so daemon-backed job
+// output can still be mirrored into each attached block's terminal file.
+var GetSessionDaemonBlocksFn func(daemonId string) []string
 
 type connState struct {
 	actual      bool
@@ -231,7 +244,7 @@ func SendBlockJobStatusEvent(ctx context.Context, blockId string) {
 }
 
 func sendBlockJobStatusEventByJob(ctx context.Context, job *waveobj.Job) {
-	if job == nil || job.AttachedBlockId == "" {
+	if job == nil || job.AttachedBlockId == "" || strings.HasPrefix(job.AttachedBlockId, "daemon:") {
 		return
 	}
 	SendBlockJobStatusEvent(ctx, job.AttachedBlockId)
@@ -477,7 +490,10 @@ func handleBlockCloseEvent(event *wps.WaveEvent) {
 	}
 
 	for _, jobId := range jobIds {
-		TerminateAndDetachJob(ctx, jobId)
+		err := TerminateAndDetachJob(ctx, jobId)
+		if err != nil {
+			log.Printf("[job:%s] error in handleBlockCloseEvent: %v", jobId, err)
+		}
 	}
 }
 
@@ -512,6 +528,11 @@ func onConnectionUp(connName string) {
 	}
 
 	log.Printf("[conn:%s] finished reconnecting jobs: %d/%d successful", connName, successCount, len(jobsToReconnect))
+
+	// Reconcile session daemon state for this connection.
+	if OnConnectionUpFn != nil {
+		OnConnectionUpFn(ctx, connName)
+	}
 }
 
 func onConnectionDown(connName string) {
@@ -694,16 +715,17 @@ func StartJob(ctx context.Context, params StartJobParams) (string, error) {
 	publicKeyBase64 := base64.StdEncoding.EncodeToString(publicKey)
 	jobEnv := envutil.CopyAndAddToEnvMap(params.Env, "WAVETERM_JOBID", jobId)
 	startJobData := wshrpc.CommandRemoteStartJobData{
-		Cmd:                params.Cmd,
-		Args:               params.Args,
-		Env:                jobEnv,
-		TermSize:           *params.TermSize,
-		StreamMeta:         streamMeta,
-		JobAuthToken:       jobAuthToken,
-		JobId:              jobId,
-		MainServerJwtToken: jobAccessToken,
-		ClientId:           clientId,
-		PublicKeyBase64:    publicKeyBase64,
+		Cmd:                      params.Cmd,
+		Args:                     params.Args,
+		Env:                      jobEnv,
+		TermSize:                 *params.TermSize,
+		StreamMeta:               streamMeta,
+		JobAuthToken:             jobAuthToken,
+		JobId:                    jobId,
+		MainServerJwtToken:       jobAccessToken,
+		ClientId:                 clientId,
+		PublicKeyBase64:          publicKeyBase64,
+		RemoteIdleTimeoutSeconds: DefaultRemoteIdleTimeoutSeconds,
 	}
 
 	rpcOpts := &wshrpc.RpcOpts{
@@ -761,6 +783,17 @@ func StartJob(ctx context.Context, params StartJobParams) (string, error) {
 		},
 	})
 
+	routeId := wshutil.MakeJobRouteId(jobId)
+	waitCtx, cancelFn := context.WithTimeout(ctx, 5*time.Second)
+	err = wshutil.DefaultRouter.WaitForRegister(waitCtx, routeId)
+	cancelFn()
+	if err != nil {
+		log.Printf("[job:%s] warning: route not established after start: %v", jobId, err)
+	} else {
+		SetJobConnStatus(jobId, JobConnStatus_Connected)
+		log.Printf("[job:%s] route established, job connected", jobId)
+	}
+
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("jobcontroller:runOutputLoop", recover())
@@ -796,18 +829,33 @@ func handleAppendJobFile(ctx context.Context, jobId string, fileName string, dat
 	if err != nil {
 		return fmt.Errorf("error appending to job file: %w", err)
 	}
-
 	job, err := wstore.DBGet[*waveobj.Job](ctx, jobId)
 	if err != nil {
 		return fmt.Errorf("error getting job: %w", err)
 	}
-	if job != nil && job.AttachedBlockId != "" {
-		err = doWFSAppend(ctx, waveobj.MakeORef(waveobj.OType_Block, job.AttachedBlockId), fileName, data)
-		if err != nil {
-			return fmt.Errorf("error appending to block file: %w", err)
-		}
+	if job == nil || job.AttachedBlockId == "" {
+		return nil
 	}
-
+	if strings.HasPrefix(job.AttachedBlockId, "daemon:") {
+		daemonId := strings.TrimPrefix(job.AttachedBlockId, "daemon:")
+		if GetSessionDaemonBlocksFn == nil {
+			return nil
+		}
+		for _, blockId := range GetSessionDaemonBlocksFn(daemonId) {
+			if blockId == "" {
+				continue
+			}
+			err = doWFSAppend(ctx, waveobj.MakeORef(waveobj.OType_Block, blockId), fileName, data)
+			if err != nil {
+				return fmt.Errorf("error appending daemon job output to block file: %w", err)
+			}
+		}
+		return nil
+	}
+	err = doWFSAppend(ctx, waveobj.MakeORef(waveobj.OType_Block, job.AttachedBlockId), fileName, data)
+	if err != nil {
+		return fmt.Errorf("error appending to block file: %w", err)
+	}
 	return nil
 }
 
@@ -918,15 +966,17 @@ func tryTerminateJobManager(ctx context.Context, jobId string) {
 	}
 }
 
-func TerminateAndDetachJob(ctx context.Context, jobId string) {
+func TerminateAndDetachJob(ctx context.Context, jobId string) error {
 	err := TerminateJobManager(ctx, jobId)
 	if err != nil {
 		log.Printf("[job:%s] error terminating job manager: %v", jobId, err)
+		return fmt.Errorf("terminate job manager: %w", err)
 	}
 	err = DetachJobFromBlock(ctx, jobId, true)
 	if err != nil {
 		log.Printf("[job:%s] error detaching job from block: %v", jobId, err)
 	}
+	return nil
 }
 
 func TerminateJobManager(ctx context.Context, jobId string) error {
@@ -1099,11 +1149,12 @@ func doReconnectJob(ctx context.Context, jobId string, rtOpts *waveobj.RuntimeOp
 	}
 
 	reconnectData := wshrpc.CommandRemoteReconnectToJobManagerData{
-		JobId:              jobId,
-		JobAuthToken:       job.JobAuthToken,
-		MainServerJwtToken: jobAccessToken,
-		JobManagerPid:      job.JobManagerPid,
-		JobManagerStartTs:  job.JobManagerStartTs,
+		JobId:                    jobId,
+		JobAuthToken:             job.JobAuthToken,
+		MainServerJwtToken:       jobAccessToken,
+		JobManagerPid:            job.JobManagerPid,
+		JobManagerStartTs:        job.JobManagerStartTs,
+		RemoteIdleTimeoutSeconds: DefaultRemoteIdleTimeoutSeconds,
 	}
 
 	rpcOpts := &wshrpc.RpcOpts{
@@ -1131,6 +1182,10 @@ func doReconnectJob(ctx context.Context, jobId string, rtOpts *waveobj.RuntimeOp
 				log.Printf("[job:%s] error updating job manager running status: %v", jobId, updateErr)
 			} else {
 				sendBlockJobStatusEventByJob(ctx, updatedJob)
+			}
+			// Clear session daemon references to this job so daemons can be restarted
+			if ClearSessionDaemonJobFn != nil {
+				ClearSessionDaemonJobFn(ctx, jobId)
 			}
 			telemetry.GoRecordTEventWrap(&telemetrydata.TEvent{
 				Event: "job:done",
@@ -1345,59 +1400,6 @@ func restartStreaming(ctx context.Context, jobId string, knownConnected bool, rt
 }
 
 // this function must be kept up to date with getBlockTermDurableAtom in frontend/app/store/global.ts
-func IsBlockTermDurable(block *waveobj.Block) bool {
-	if block == nil {
-		return false
-	}
-
-	// Check if view is "term", and controller is "shell"
-	if block.Meta.GetString(waveobj.MetaKey_View, "") != "term" || block.Meta.GetString(waveobj.MetaKey_Controller, "") != "shell" {
-		return false
-	}
-
-	// 1. Check if block has a JobId
-	if block.JobId != "" {
-		return true
-	}
-
-	// 2. Check if connection is local or WSL (not durable)
-	connName := block.Meta.GetString(waveobj.MetaKey_Connection, "")
-	if conncontroller.IsLocalConnName(connName) || conncontroller.IsWslConnName(connName) {
-		return false
-	}
-
-	// 3. Check config hierarchy: blockmeta → connection → global (default true)
-	// Check block meta first
-	if val, exists := block.Meta[waveobj.MetaKey_TermDurable]; exists {
-		if boolVal, ok := val.(bool); ok {
-			return boolVal
-		}
-	}
-	// Check connection config
-	fullConfig := wconfig.GetWatcher().GetFullConfig()
-	if connName != "" {
-		if connConfig, exists := fullConfig.Connections[connName]; exists {
-			if connConfig.TermDurable != nil {
-				return *connConfig.TermDurable
-			}
-		}
-	}
-	// Check global settings
-	if fullConfig.Settings.TermDurable != nil {
-		return *fullConfig.Settings.TermDurable
-	}
-	// Default to true for non-local connections
-	return true
-}
-
-func IsBlockIdTermDurable(blockId string) bool {
-	block, err := wstore.DBGet[*waveobj.Block](context.Background(), blockId)
-	if err != nil || block == nil {
-		return false
-	}
-	return IsBlockTermDurable(block)
-}
-
 func DeleteJob(ctx context.Context, jobId string) error {
 	SetJobConnStatus(jobId, JobConnStatus_Disconnected)
 	jobTerminationMessageWritten.Delete(jobId)
@@ -1539,7 +1541,7 @@ func SendInput(ctx context.Context, data wshrpc.CommandJobInputData) error {
 }
 
 func resetTerminalState(logCtx context.Context, blockId string) {
-	if blockId == "" {
+	if blockId == "" || strings.HasPrefix(blockId, "daemon:") {
 		return
 	}
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)
@@ -1589,7 +1591,7 @@ func writeSessionSeparatorToTerminal(blockId string, termWidth int) {
 
 // msg should not have a terminating newline
 func writeMutedMessageToTerminal(blockId string, msg string) {
-	if blockId == "" {
+	if blockId == "" || strings.HasPrefix(blockId, "daemon:") {
 		return
 	}
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultTimeout)

@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1258,4 +1259,52 @@ func GetConnectionsFromConfig() ([]string, error) {
 	remote.WaveSshConfigUserSettings().ReloadConfigs()
 
 	return resolveSshConfigPatterns(sshConfigFiles)
+}
+
+// runSSHCommand executes a command over the SSH connection and returns stdout.
+func runSSHCommand(ctx context.Context, client *ssh.Client, cmd string) (string, error) {
+	session, err := client.NewSession()
+	if err != nil {
+		return "", err
+	}
+	defer session.Close()
+	var outBuf strings.Builder
+	session.Stdout = &outBuf
+	session.Stderr = &outBuf
+	err = runSessionWithContext(ctx, session, cmd)
+	return strings.TrimSpace(outBuf.String()), err
+}
+
+// CheckRemoteProcessAlive verifies whether a process with the given PID
+// is still running on the remote host.  It tries Unix (ps) first, then
+// falls back to Windows (tasklist).  Returns true if the process exists.
+func CheckRemoteProcessAlive(ctx context.Context, connName string, pid int) (bool, error) {
+	opts, err := remote.ParseOpts(connName)
+	if err != nil {
+		return false, err
+	}
+	conn := MaybeGetConn(opts)
+	if conn == nil {
+		return false, fmt.Errorf("connection %q not found", connName)
+	}
+	client := conn.GetClient()
+	if client == nil {
+		return false, fmt.Errorf("connection %q not connected", connName)
+	}
+
+	pidStr := strconv.Itoa(pid)
+
+	// Unix: "ps -p <pid> -o pid=" returns the PID if process exists, empty otherwise.
+	out, _ := runSSHCommand(ctx, client, fmt.Sprintf("ps -p %s -o pid= 2>/dev/null", pidStr))
+	if strings.TrimSpace(out) == pidStr {
+		return true, nil
+	}
+
+	// Windows: "tasklist /FI ..." lists matching processes.
+	out, _ = runSSHCommand(ctx, client, fmt.Sprintf("tasklist /FI \"PID eq %s\" /NH 2>nul", pidStr))
+	if strings.Contains(out, pidStr) {
+		return true, nil
+	}
+
+	return false, nil
 }

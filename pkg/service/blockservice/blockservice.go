@@ -5,6 +5,7 @@ package blockservice
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -37,13 +38,13 @@ func (bs *BlockService) GetControllerStatus(ctx context.Context, blockId string)
 
 func (*BlockService) SaveTerminalState_Meta() tsgenmeta.MethodMeta {
 	return tsgenmeta.MethodMeta{
-		Desc:     "save the terminal state to a blockfile",
-		ArgNames: []string{"ctx", "blockId", "state", "stateType", "ptyOffset", "termSize"},
+		Desc:     "save the terminal state to a zone file",
+		ArgNames: []string{"ctx", "zoneId", "state", "stateType", "ptyOffset", "termSize"},
 	}
 }
 
-func (bs *BlockService) SaveTerminalState(ctx context.Context, blockId string, state string, stateType string, ptyOffset int64, termSize waveobj.TermSize) error {
-	_, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+func (bs *BlockService) SaveTerminalState(ctx context.Context, zoneId string, state string, stateType string, ptyOffset int64, termSize waveobj.TermSize) error {
+	err := ensureTerminalStateZoneExists(ctx, zoneId)
 	if err != nil {
 		return err
 	}
@@ -51,8 +52,8 @@ func (bs *BlockService) SaveTerminalState(ctx context.Context, blockId string, s
 		return fmt.Errorf("invalid state type: %q", stateType)
 	}
 	// ignore MakeFile error (already exists is ok)
-	filestore.WFS.MakeFile(ctx, blockId, "cache:term:"+stateType, nil, wshrpc.FileOpts{})
-	err = filestore.WFS.WriteFile(ctx, blockId, "cache:term:"+stateType, []byte(state))
+	filestore.WFS.MakeFile(ctx, zoneId, "cache:term:"+stateType, nil, wshrpc.FileOpts{})
+	err = filestore.WFS.WriteFile(ctx, zoneId, "cache:term:"+stateType, []byte(state))
 	if err != nil {
 		return fmt.Errorf("cannot save terminal state: %w", err)
 	}
@@ -60,11 +61,29 @@ func (bs *BlockService) SaveTerminalState(ctx context.Context, blockId string, s
 		"ptyoffset": ptyOffset,
 		"termsize":  termSize,
 	}
-	err = filestore.WFS.WriteMeta(ctx, blockId, "cache:term:"+stateType, fileMeta, true)
+	err = filestore.WFS.WriteMeta(ctx, zoneId, "cache:term:"+stateType, fileMeta, true)
 	if err != nil {
 		return fmt.Errorf("cannot save terminal state meta: %w", err)
 	}
 	return nil
+}
+
+func ensureTerminalStateZoneExists(ctx context.Context, zoneId string) error {
+	_, blockErr := wstore.DBMustGet[*waveobj.Block](ctx, zoneId)
+	if blockErr == nil {
+		return nil
+	}
+	if !errors.Is(blockErr, wstore.ErrNotFound) {
+		return blockErr
+	}
+	_, jobErr := wstore.DBMustGet[*waveobj.Job](ctx, zoneId)
+	if jobErr == nil {
+		return nil
+	}
+	if !errors.Is(jobErr, wstore.ErrNotFound) {
+		return jobErr
+	}
+	return fmt.Errorf("terminal state zone %q not found", zoneId)
 }
 
 func (*BlockService) CleanupOrphanedBlocks_Meta() tsgenmeta.MethodMeta {
