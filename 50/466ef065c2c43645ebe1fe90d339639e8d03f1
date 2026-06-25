@@ -1,0 +1,46 @@
+frontend/app/view/term/term.tsx
+  s_f90dd047840b09::t_563593a9a3ef31 362-373
+pkg/shellexec/conninterface.go
+  s_f90dd047840b09::t_0a6b74baac9fd0 32,136-137,224-225,266
+pkg/shellexec/shellexec.go
+  s_f90dd047840b09::t_5ba70adc81c406 304,310-312,320-325,331,340,346,437,443-445,453-458,464,490,496
+  s_f90dd047840b09::t_ef4b445a1df1c7 338-339,341-342,488-489,491-492
+frontend/app/view/term/termwrap.ts
+  s_feed363b4fc6e6::t_7045d17f2d4065 716-722,798,813
+  s_feed363b4fc6e6::t_d54a13c889ba21 134-135
+  s_f90dd047840b09::t_d4084562267fd5 858,862-863,870-878,893-897
+  s_feed363b4fc6e6::t_e9700d76b3f998 685-686,855-856,884-885,888-889,891-892
+  s_feed363b4fc6e6::t_79c4a67104f957 308,687,735,739-741,743-755
+  s_f90dd047840b09::t_4cfac63e0822c0 840-842
+  s_feed363b4fc6e6::t_61382f9ce353e5 778,797,812,815,879,883,886-887,890
+  s_feed363b4fc6e6::t_ca2936de5bdbaf 63-65,88-133,136-157
+  s_feed363b4fc6e6::t_aa0784ad7489dc 736-738,880-882
+  s_f90dd047840b09::t_6ce9af2b89fc6a 832-838,843,847-849,898
+  s_feed363b4fc6e6::t_faedcf0076ffff 532
+  s_f90dd047840b09::t_3edace7e65ea63 541,839,844-846,850-854
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.11",
+  "base_commit_sha": "50466ef065c2c43645ebe1fe90d339639e8d03f1",
+  "prompts": {},
+  "logical_commit_id": "50466ef065c2c43645ebe1fe90d339639e8d03f1",
+  "sessions": {
+    "s_f90dd047840b09": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef71b-9105-79f2-a741-9cc5356456cc",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    },
+    "s_feed363b4fc6e6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef931-e499-7dd1-9e36-f5d708d5bce5",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}
