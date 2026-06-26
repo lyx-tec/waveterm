@@ -174,14 +174,16 @@ type ActiveTabUpdate struct {
 }
 
 type Workspace struct {
-	OID         string      `json:"oid"`
-	Version     int         `json:"version"`
-	Name        string      `json:"name,omitempty"`
-	Icon        string      `json:"icon,omitempty"`
-	Color       string      `json:"color,omitempty"`
-	TabIds      []string    `json:"tabids"`
-	ActiveTabId string      `json:"activetabid"`
-	Meta        MetaMapType `json:"meta"`
+	OID             string      `json:"oid"`
+	Version         int         `json:"version"`
+	Name            string      `json:"name,omitempty"`
+	Icon            string      `json:"icon,omitempty"`
+	Color           string      `json:"color,omitempty"`
+	DefaultConnName string      `json:"defaultconnname,omitempty"`
+	DefaultCwd      string      `json:"defaultcwd,omitempty"`
+	TabIds          []string    `json:"tabids"`
+	ActiveTabId     string      `json:"activetabid"`
+	Meta            MetaMapType `json:"meta"`
 }
 
 func (*Workspace) GetOType() string {

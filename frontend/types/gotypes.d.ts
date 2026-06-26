@@ -2249,6 +2249,8 @@ declare global {
         name?: string;
         icon?: string;
         color?: string;
+        defaultconnname?: string;
+        defaultcwd?: string;
         tabids: string[];
         activetabid: string;
     };

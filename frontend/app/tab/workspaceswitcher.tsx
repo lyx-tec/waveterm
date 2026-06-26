@@ -16,7 +16,7 @@ import clsx from "clsx";
 import { atom, PrimitiveAtom, useAtom, useAtomValue, useSetAtom } from "jotai";
 import { splitAtom } from "jotai/utils";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import { CSSProperties, forwardRef, useCallback, useEffect } from "react";
+import { CSSProperties, forwardRef, useCallback, useEffect, useState } from "react";
 import WorkspaceSVG from "../asset/workspace.svg";
 import { IconButton } from "../element/iconbutton";
 import { globalStore } from "@/app/store/jotaiStore";
@@ -100,7 +100,12 @@ const WorkspaceSwitcher = forwardRef<HTMLDivElement>((_, ref) => {
 
     const saveWorkspace = () => {
         fireAndForget(async () => {
-            await env.services.workspace.UpdateWorkspace(activeWorkspace.oid, "", "", "", true);
+            await env.services.workspace.UpdateWorkspace(
+                activeWorkspace.oid, "", "", "",
+                activeWorkspace.defaultconnname ?? "",
+                activeWorkspace.defaultcwd ?? "",
+                true
+            );
             await updateWorkspaceList();
             setEditingWorkspace(activeWorkspace.oid);
         });
@@ -169,20 +174,23 @@ const WorkspaceSwitcherItem = ({
     const workspace = workspaceEntry.workspace;
     const isCurrentWorkspace = activeWorkspace.oid === workspace.oid;
 
-    const setWorkspace = useCallback((newWorkspace: Workspace) => {
-        setWorkspaceEntry({ ...workspaceEntry, workspace: newWorkspace });
-        if (newWorkspace.name != "") {
+    const setWorkspaceField = useCallback((patch: Partial<Workspace>) => {
+        const updated = { ...workspace, ...patch };
+        setWorkspaceEntry({ ...workspaceEntry, workspace: updated });
+        if (updated.name != "") {
             fireAndForget(() =>
                 env.services.workspace.UpdateWorkspace(
                     workspace.oid,
-                    newWorkspace.name,
-                    newWorkspace.icon,
-                    newWorkspace.color,
+                    updated.name,
+                    updated.icon,
+                    updated.color,
+                    updated.defaultconnname ?? "",
+                    updated.defaultcwd ?? "",
                     false
                 )
             );
         }
-    }, []);
+    }, [workspace.oid, workspaceEntry]);
 
     const isActive = !!workspaceEntry.windowId;
     const editIconDecl: IconButtonDecl = {
@@ -250,10 +258,14 @@ const WorkspaceSwitcherItem = ({
                     title={workspace.name}
                     icon={workspace.icon}
                     color={workspace.color}
+                    connName={workspace.defaultconnname ?? ""}
+                    cwd={workspace.defaultcwd ?? ""}
                     focusInput={isEditing}
-                    onTitleChange={(title) => setWorkspace({ ...workspace, name: title })}
-                    onColorChange={(color) => setWorkspace({ ...workspace, color })}
-                    onIconChange={(icon) => setWorkspace({ ...workspace, icon })}
+                    onTitleChange={(newTitle) => setWorkspaceField({ name: newTitle })}
+                    onColorChange={(newColor) => setWorkspaceField({ color: newColor })}
+                    onIconChange={(newIcon) => setWorkspaceField({ icon: newIcon })}
+                    onConnNameChange={(newConnName) => setWorkspaceField({ defaultconnname: newConnName })}
+                    onCwdChange={(newCwd) => setWorkspaceField({ defaultcwd: newCwd })}
                     onDeleteWorkspace={() => onDeleteWorkspace(workspace.oid)}
                 />
             </ExpandableMenuItem>

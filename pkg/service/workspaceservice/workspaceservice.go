@@ -6,12 +6,14 @@ package workspaceservice
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
 	"github.com/wavetermdev/waveterm/pkg/tsgen/tsgenmeta"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
+	"github.com/wavetermdev/waveterm/pkg/wconfig"
 	"github.com/wavetermdev/waveterm/pkg/wcore"
 	"github.com/wavetermdev/waveterm/pkg/wps"
 	"github.com/wavetermdev/waveterm/pkg/wstore"
@@ -38,13 +40,13 @@ func (svc *WorkspaceService) CreateWorkspace(ctx context.Context, name string, i
 
 func (svc *WorkspaceService) UpdateWorkspace_Meta() tsgenmeta.MethodMeta {
 	return tsgenmeta.MethodMeta{
-		ArgNames: []string{"ctx", "workspaceId", "name", "icon", "color", "applyDefaults"},
+		ArgNames: []string{"ctx", "workspaceId", "name", "icon", "color", "defaultConnName", "defaultCwd", "applyDefaults"},
 	}
 }
 
-func (svc *WorkspaceService) UpdateWorkspace(ctx context.Context, workspaceId string, name string, icon string, color string, applyDefaults bool) (waveobj.UpdatesRtnType, error) {
+func (svc *WorkspaceService) UpdateWorkspace(ctx context.Context, workspaceId string, name string, icon string, color string, defaultConnName string, defaultCwd string, applyDefaults bool) (waveobj.UpdatesRtnType, error) {
 	ctx = waveobj.ContextWithUpdates(ctx)
-	_, updated, err := wcore.UpdateWorkspace(ctx, workspaceId, name, icon, color, applyDefaults)
+	_, updated, err := wcore.UpdateWorkspace(ctx, workspaceId, name, icon, color, defaultConnName, defaultCwd, applyDefaults)
 	if err != nil {
 		return nil, fmt.Errorf("error updating workspace: %w", err)
 	}
@@ -144,6 +146,25 @@ func (svc *WorkspaceService) GetIcons_Meta() tsgenmeta.MethodMeta {
 
 func (svc *WorkspaceService) GetIcons() []string {
 	return wcore.WorkspaceIcons[:]
+}
+
+func (svc *WorkspaceService) GetConnectionNames_Meta() tsgenmeta.MethodMeta {
+	return tsgenmeta.MethodMeta{
+		ReturnDesc: "connectionNames",
+	}
+}
+
+func (svc *WorkspaceService) GetConnectionNames() []string {
+	fullConfig := wconfig.GetWatcher().GetFullConfig()
+	names := make([]string, 0, len(fullConfig.Connections)+1)
+	names = append(names, "local")
+	for connName := range fullConfig.Connections {
+		if connName != "local" {
+			names = append(names, connName)
+		}
+	}
+	sort.Strings(names[1:])
+	return names
 }
 
 func (svc *WorkspaceService) CreateTab(workspaceId string, tabName string, activateTab bool) (string, waveobj.UpdatesRtnType, error) {
