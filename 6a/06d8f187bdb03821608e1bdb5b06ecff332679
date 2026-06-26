@@ -1,0 +1,57 @@
+frontend/types/gotypes.d.ts
+  s_aef909cc8823b6::t_68700a6794b55e 2252-2253
+pkg/service/workspaceservice/workspaceservice.go
+  s_aef909cc8823b6::t_5ce1c4e9961895 9,16
+  s_aef909cc8823b6::t_c681d8c0257e09 149,151-165,167,169
+  s_aef909cc8823b6::t_c2eb7fc84b11cc 166
+  s_aef909cc8823b6::t_de4aa73dd9332a 43,47,49
+  s_aef909cc8823b6::t_5adc157a4d2e46 168
+pkg/wcore/workspace.go
+  s_aef909cc8823b6::t_79e2af788815eb 265
+  s_aef909cc8823b6::t_06d14d050ba884 118,302-336,338
+  s_aef909cc8823b6::t_00d5ccb15c53e5 74
+  s_aef909cc8823b6::t_065dfa4219d995 79,111-117
+  s_aef909cc8823b6::t_ef2b9bdcec7457 337
+frontend/app/tab/workspaceeditor.tsx
+  s_aef909cc8823b6::t_eeeeb183f085ea 167-173
+  s_aef909cc8823b6::t_65193935248e1a 63-94,96,98-102,108-129,144,163,174,208
+  s_aef909cc8823b6::t_323cbb52b461ec 3,134-135,140-141,149-150,155-156,195-196
+  s_aef909cc8823b6::t_17623b93e74c9b 95,97,103-107
+pkg/waveobj/wtype.go
+  s_aef909cc8823b6::t_eb93975f7645f7 177-186
+frontend/app/tab/workspaceswitcher.tsx
+  s_aef909cc8823b6::t_1feb9ca9c5c93b 177-180,184-188,193
+  s_aef909cc8823b6::t_2a9a855c049d8e 261-262,264-268
+  s_aef909cc8823b6::t_ed4c984c14de8f 103-108
+  s_aef909cc8823b6::t_b4ab019a796ad4 19
+frontend/app/store/services.ts
+  s_aef909cc8823b6::t_339b056226fde9 215
+  s_aef909cc8823b6::t_03280ee18e7135 191-195
+frontend/app/store/keymodel.ts
+  s_aef909cc8823b6::t_92cf71da483633 364-365,372,377,379-386
+  s_aef909cc8823b6::t_64d50ca75e8656 387
+frontend/app/tab/workspaceeditor.scss
+  s_aef909cc8823b6::t_6ca3f15ad6572b 108-112,114
+  s_aef909cc8823b6::t_7c524d37caab29 12-13,18,22-25,28,32
+  s_aef909cc8823b6::t_eae32ce042e061 3,5-9,11,14-17,19-21,26-27,29-31,33-71,73,76-77,103,106,117-119
+  s_aef909cc8823b6::t_e9ecce991fbe77 10
+  s_aef909cc8823b6::t_508940e691fd16 72
+  s_aef909cc8823b6::t_3076fb44c5f13d 113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "6a06d8f187bdb03821608e1bdb5b06ecff332679",
+  "prompts": {},
+  "logical_commit_id": "6a06d8f187bdb03821608e1bdb5b06ecff332679",
+  "sessions": {
+    "s_aef909cc8823b6": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0fe96554cffew1v27bXU1qL6xh",
+        "model": "deepseek-v4-flash-free"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}
