@@ -382,11 +382,16 @@ export class PreviewModel implements ViewModel {
             return null;
         });
         this.metaFilePath = atom<string>((get) => {
-            const file = get(this.blockAtom)?.meta?.file;
-            if (file == null) {
-                return "~";
+            const blockMeta = get(this.blockAtom)?.meta;
+            const file = blockMeta?.file;
+            if (!isBlank(file)) {
+                return file;
             }
-            return file;
+            const cwd = blockMeta?.["file:cwd"];
+            if (!isBlank(cwd)) {
+                return cwd;
+            }
+            return "~";
         });
         this.statFilePath = atom<Promise<string>>(async (get) => {
             const fileInfo = await get(this.statFile);
@@ -417,8 +422,9 @@ export class PreviewModel implements ViewModel {
                         path,
                     },
                 });
-                const blockMeta = get(this.blockAtom)?.meta as Record<string, any>;
-                if (blockMeta?.["file:workspacecwd"] && (statFile?.notfound || !statFile?.isdir)) {
+                const blockMeta = get(this.blockAtom)?.meta;
+                const usesInitialCwd = isBlank(blockMeta?.file) && !isBlank(blockMeta?.["file:cwd"]);
+                if (usesInitialCwd && (statFile?.notfound || !statFile?.isdir)) {
                     const fallbackPath = await this.formatRemoteUri("~", get);
                     return await this.env.rpc.FileInfoCommand(TabRpcClient, {
                         info: {
@@ -600,7 +606,6 @@ export class PreviewModel implements ViewModel {
         if (updateMeta == null) {
             return;
         }
-        (updateMeta as Record<string, any>)["file:workspacecwd"] = null;
         const blockOref = WOS.makeORef("block", this.blockId);
         await this.env.services.object.UpdateObjectMeta(blockOref, updateMeta);
 
@@ -637,7 +642,6 @@ export class PreviewModel implements ViewModel {
             return;
         }
         updateMeta.edit = false;
-        (updateMeta as Record<string, any>)["file:workspacecwd"] = null;
         const blockOref = WOS.makeORef("block", this.blockId);
         await this.env.services.object.UpdateObjectMeta(blockOref, updateMeta);
     }
@@ -650,7 +654,6 @@ export class PreviewModel implements ViewModel {
             return;
         }
         updateMeta.edit = false;
-        (updateMeta as Record<string, any>)["file:workspacecwd"] = null;
         const blockOref = WOS.makeORef("block", this.blockId);
         await this.env.services.object.UpdateObjectMeta(blockOref, updateMeta);
     }

@@ -334,8 +334,8 @@ func applyWorkspaceDefaultsToBlocks(ctx context.Context, workspaceId string, tab
 			}
 		}
 		if ws.DefaultCwd != "" && isFileBrowser {
-			meta[waveobj.MetaKey_File] = ws.DefaultCwd
-			meta["file:workspacecwd"] = true
+			meta[waveobj.MetaKey_File] = ""
+			meta[waveobj.MetaKey_FileCwd] = ws.DefaultCwd
 			updated = true
 		}
 		if updated {

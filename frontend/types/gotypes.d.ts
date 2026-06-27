@@ -1143,6 +1143,7 @@ declare global {
         view?: string;
         controller?: string;
         file?: string;
+        "file:cwd"?: string;
         url?: string;
         pinnedurl?: string;
         connection?: string;

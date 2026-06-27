@@ -382,7 +382,7 @@ function applyWorkspaceDefaultsToBlockDef(blockDef: BlockDef): BlockDef {
         nextMeta = { ...nextMeta, "cmd:cwd": workspace.defaultcwd };
     }
     if (workspace.defaultcwd && isFileBrowser) {
-        nextMeta = { ...nextMeta, file: workspace.defaultcwd, "file:workspacecwd": true };
+        nextMeta = { ...nextMeta, file: "", "file:cwd": workspace.defaultcwd };
     }
     if (nextMeta === meta) {
         return blockDef;
