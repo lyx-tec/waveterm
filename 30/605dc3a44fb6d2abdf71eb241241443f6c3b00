@@ -1,0 +1,46 @@
+frontend/app/tab/workspaceswitcher.scss
+  s_df6fdba063b6f6::t_03f38b44ab1be5 33,69,76,78,84,86,88-89,109-130,132-138,140-147,168-169,179-212,214-219,238-245
+  s_df6fdba063b6f6::t_815c2ee982b883 171,174
+  s_df6fdba063b6f6::t_b8364da1cf5564 213,220-237
+  s_df6fdba063b6f6::t_d2735120bd1302 172-173
+  s_df6fdba063b6f6::t_df06288eadb90f 246
+frontend/app/tab/workspaceeditor.scss
+  s_df6fdba063b6f6::t_725d9b3c685162 49
+pkg/service/workspaceservice/workspaceservice.go
+  s_df6fdba063b6f6::t_51bd9085cf669b 161
+  s_df6fdba063b6f6::t_a87c5cbc6d3155 14,160,162-165,167-176
+frontend/app/tab/workspaceeditor.tsx
+  s_df6fdba063b6f6::t_3bd607a5957021 86-90
+  s_df6fdba063b6f6::t_bd05ba7ed6940d 3,114-117,132
+frontend/app/tab/workspaceswitcher.tsx
+  s_df6fdba063b6f6::t_7db57335cb8b71 15,210
+  s_df6fdba063b6f6::t_279650e45491cb 360
+  s_df6fdba063b6f6::t_6978dc5bcbb364 18,44-51,53,58-78
+  s_df6fdba063b6f6::t_316fb21da90624 4,137-140,207,236,330-331,334
+  s_df6fdba063b6f6::t_e830261566779f 83,85,123-126
+  s_df6fdba063b6f6::t_3726af41182a0b 348
+  s_df6fdba063b6f6::t_303cdf806e2c7c 287-288,290-296,300-329,332-333,335-336,344-347,349-352,361,363-364,368-372
+  s_df6fdba063b6f6::t_98ef2fd74172fc 297-299
+  s_df6fdba063b6f6::t_041abc2454d143 211,224,231-232,237-238,258-263,267,382
+  s_df6fdba063b6f6::t_044597b0c2258d 178,272-286,289,337-343,353-359,362,365-366,373,381
+  s_df6fdba063b6f6::t_c0bceda295a79a 167-177,179-201
+  s_df6fdba063b6f6::t_c00eef9d2fe061 52
+  s_df6fdba063b6f6::t_0af5ed57cf487f 271
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "30605dc3a44fb6d2abdf71eb241241443f6c3b00",
+  "prompts": {},
+  "logical_commit_id": "357a5550e3caa49bb33ed42a6c2514236b2bd56c",
+  "sessions": {
+    "s_df6fdba063b6f6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f046c-e6aa-77a0-87cd-8a4e6db90895",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}

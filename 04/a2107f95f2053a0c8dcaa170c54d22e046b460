@@ -1,0 +1,69 @@
+pkg/shellexec/shellexec.go
+  s_df6fdba063b6f6::t_39d1ff6a3121a3 650
+  s_df6fdba063b6f6::t_aa55b138361544 147-152
+  s_df6fdba063b6f6::t_0c39702b925eb1 114-115,118-119,146,153,212,319,393
+  s_df6fdba063b6f6::t_bea98b7f0cd996 122,124-145
+  s_df6fdba063b6f6::t_4de1fd4f2388b1 120,154-157,159,392,394,534
+  s_df6fdba063b6f6::t_7ccc7f48949da3 195,338
+  s_df6fdba063b6f6::t_e2303d6d8a1176 213-214
+  s_df6fdba063b6f6::t_ce3c9dd5d39c2f 158
+  s_df6fdba063b6f6::t_af2e694dbb123d 395
+pkg/jobcontroller/jobcontroller.go
+  s_df6fdba063b6f6::t_c7af53712775af 630
+  s_df6fdba063b6f6::t_521bdb481ae615 722
+pkg/wshrpc/wshrpctypes.go
+  s_df6fdba063b6f6::t_521bdb481ae615 983-994
+  s_df6fdba063b6f6::t_9030a7af3c277a 740,749
+  s_df6fdba063b6f6::t_dd0eb6e086a6ac 825
+pkg/jobmanager/jobcmd.go
+  s_df6fdba063b6f6::t_20216cb6f9b0eb 28,75-76,78-80
+  s_df6fdba063b6f6::t_cc06a6cea0a363 77
+  s_df6fdba063b6f6::t_0ae4acd9e6f05e 12,48-59
+  s_df6fdba063b6f6::t_32ed7d931556dc 60-61
+frontend/types/gotypes.d.ts
+  s_df6fdba063b6f6::t_63b7e1b506e0a9 454,606,711
+pkg/jobmanager/jobmanager.go
+  s_df6fdba063b6f6::t_31c43bd8400cef 235
+frontend/app/view/preview/preview-model.tsx
+  s_df6fdba063b6f6::t_205fac20fab2fb 603,640,653
+  s_df6fdba063b6f6::t_6f9feae02dfa1e 420-421
+  s_df6fdba063b6f6::t_b4d55b59c943ec 422-428
+pkg/wshrpc/wshremote/wshremote_job.go
+  s_df6fdba063b6f6::t_521bdb481ae615 286
+frontend/app/store/global.ts
+  s_df6fdba063b6f6::t_02c6810db65cdb 362,370-376,378-380,382,386-392,400,424,444,463
+  s_df6fdba063b6f6::t_f0a2031cf63402 364,366
+  s_df6fdba063b6f6::t_4de1fd4f2388b1 363,368-369
+  s_df6fdba063b6f6::t_97d1db1799c1af 365,367,381,383-384
+  s_df6fdba063b6f6::t_b4d55b59c943ec 377,385
+  s_df6fdba063b6f6::t_3f60402f9809d8 734
+pkg/wshrpc/wshserver/wshserver.go
+  s_df6fdba063b6f6::t_521bdb481ae615 1572
+pkg/blockcontroller/shellcontroller.go
+  s_df6fdba063b6f6::t_8e50ef0d7e6e1d 430,454,463,479
+  s_df6fdba063b6f6::t_4b4d70c0c0c786 724
+  s_df6fdba063b6f6::t_379f310a682eab 618-626
+  s_df6fdba063b6f6::t_521bdb481ae615 406
+pkg/shellexec/shellexec_test.go
+  s_df6fdba063b6f6::t_dcc860b575c8b0 1-43
+  s_df6fdba063b6f6::t_7d91e1b25eddbf 44-58
+cmd/test-conn/testutil.go
+  s_df6fdba063b6f6::t_84218be226f5ed 162,290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "04a2107f95f2053a0c8dcaa170c54d22e046b460",
+  "prompts": {},
+  "logical_commit_id": "80c723e42cc39c94370bbbcd57650cb897df1a67",
+  "sessions": {
+    "s_df6fdba063b6f6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f046c-e6aa-77a0-87cd-8a4e6db90895",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}
