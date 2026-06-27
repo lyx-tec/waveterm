@@ -11,6 +11,7 @@ import (
 
 	"github.com/wavetermdev/waveterm/pkg/blockcontroller"
 	"github.com/wavetermdev/waveterm/pkg/panichandler"
+	"github.com/wavetermdev/waveterm/pkg/remote/conncontroller"
 	"github.com/wavetermdev/waveterm/pkg/tsgen/tsgenmeta"
 	"github.com/wavetermdev/waveterm/pkg/waveobj"
 	"github.com/wavetermdev/waveterm/pkg/wconfig"
@@ -156,12 +157,23 @@ func (svc *WorkspaceService) GetConnectionNames_Meta() tsgenmeta.MethodMeta {
 
 func (svc *WorkspaceService) GetConnectionNames() []string {
 	fullConfig := wconfig.GetWatcher().GetFullConfig()
-	names := make([]string, 0, len(fullConfig.Connections)+1)
-	names = append(names, "local")
-	for connName := range fullConfig.Connections {
-		if connName != "local" {
-			names = append(names, connName)
+	nameSet := make(map[string]bool, len(fullConfig.Connections)+1)
+	names := []string{"local"}
+
+	addName := func(connName string) {
+		if connName == "" || connName == "local" || nameSet[connName] {
+			return
 		}
+		nameSet[connName] = true
+		names = append(names, connName)
+	}
+
+	for connName := range fullConfig.Connections {
+		addName(connName)
+	}
+	connNames, _ := conncontroller.GetConnectionsList()
+	for _, connName := range connNames {
+		addName(connName)
 	}
 	sort.Strings(names[1:])
 	return names

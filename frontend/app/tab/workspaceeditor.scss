@@ -46,6 +46,7 @@
             padding: 4px;
             max-height: 200px;
             overflow-y: auto;
+            overscroll-behavior: contain;
 
             .dropdown-item {
                 cursor: pointer;
@@ -133,5 +134,4 @@
             }
         }
     }
-
 }

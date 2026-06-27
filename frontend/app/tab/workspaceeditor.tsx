@@ -1,5 +1,6 @@
 import { fireAndForget, makeIconClass } from "@/util/util";
 import clsx from "clsx";
+import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../element/button";
 import { Input } from "../element/input";
@@ -82,7 +83,11 @@ const ConnectionSelector = memo(({ connectionNames, value, onChange }: Connectio
 
     const items = useMemo(() => {
         const sorted = [...connectionNames].sort();
-        return [{ label: "(none)", value: "" }, { divider: true as const }, ...sorted.map((n) => ({ label: n, value: n }))];
+        return [
+            { label: "(none)", value: "" },
+            { divider: true as const },
+            ...sorted.map((n) => ({ label: n, value: n })),
+        ];
     }, [connectionNames]);
 
     const handleSelect = (val: string) => {
@@ -106,7 +111,10 @@ const ConnectionSelector = memo(({ connectionNames, value, onChange }: Connectio
                 />
             </div>
             {open && (
-                <div className="connection-dropdown">
+                <OverlayScrollbarsComponent
+                    className="connection-dropdown"
+                    options={{ scrollbars: { autoHide: "leave" } }}
+                >
                     {items.map((item, idx) => {
                         if ("divider" in item) {
                             return <div key={idx} className="dropdown-divider" />;
@@ -121,7 +129,7 @@ const ConnectionSelector = memo(({ connectionNames, value, onChange }: Connectio
                             </div>
                         );
                     })}
-                </div>
+                </OverlayScrollbarsComponent>
             )}
         </div>
     );

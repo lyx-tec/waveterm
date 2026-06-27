@@ -30,7 +30,7 @@
 .workspace-switcher-content {
     min-height: auto;
     display: flex;
-    width: 256px;
+    width: 312px;
     padding: 0;
     flex-direction: column;
     align-items: center;
@@ -66,35 +66,27 @@
     }
 
     .expandable-menu {
-        gap: 5px;
+        gap: 3px;
     }
 
     .expandable-menu-item {
         margin: 3px 8px;
     }
 
-    .expandable-menu-item-group {
+    .workspace-list-item {
         margin: 0 8px;
-        border: 1px solid transparent;
-        border-radius: 4px;
+        padding: 0;
 
         --workspace-color: var(--main-bg-color);
 
-        &:last-child {
-            margin-bottom: 4px;
-            border-bottom-left-radius: 8px;
-            border-bottom-right-radius: 8px;
-        }
-
-        .expandable-menu-item {
-            margin: 0;
-        }
-
         .menu-group-title-wrapper {
             display: flex;
+            align-items: center;
             width: 100%;
+            min-height: 32px;
             padding: 5px 8px;
-            border-radius: 4px;
+            border-radius: 5px;
+
             .icons {
                 display: flex;
                 flex-direction: row;
@@ -115,13 +107,44 @@
             visibility: visible;
         }
 
-        &.open {
-            background-color: var(--modal-bg-color);
-            border: 1px solid var(--modal-border-color);
+        &:hover .menu-group-title-wrapper {
+            background-color: var(--button-grey-hover-bg);
         }
 
-        &.is-current .menu-group-title-wrapper {
-            background-color: rgb(from var(--workspace-color) r g b / 0.1);
+        .workspace-item-text {
+            min-width: 0;
+            flex: 1;
+
+            .label,
+            .meta {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .meta {
+                color: var(--main-text-color);
+                font-size: 11px;
+                line-height: 15px;
+                opacity: 0.58;
+            }
+        }
+    }
+
+    .is-current {
+        .workspace-list-item {
+            .menu-group-title-wrapper {
+                background-color: rgb(from var(--workspace-color) r g b / 0.14);
+            }
+
+            &:hover .menu-group-title-wrapper {
+                background-color: rgb(from var(--workspace-color) r g b / 0.2);
+            }
+
+            .wave-iconbutton.edit {
+                visibility: visible;
+                opacity: 0.85;
+            }
         }
     }
 
@@ -145,9 +168,80 @@
         padding: 0;
     }
 
+    .expandable-menu-item.workspace-list-item {
+        padding: 0;
+    }
+
     .actions {
         width: 100%;
         padding: 3px 0;
         border-top: 1px solid var(--modal-border-color);
+    }
+
+    .workspace-detail-page {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        min-height: 0;
+
+        .detail-header {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            gap: 8px;
+            padding: 7px 10px;
+            border-bottom: 1px solid var(--modal-border-color);
+
+            .wave-iconbutton.back {
+                width: 22px;
+                height: 22px;
+                justify-content: center;
+                border-radius: 4px;
+
+                &:hover {
+                    background-color: var(--button-grey-hover-bg);
+                }
+            }
+
+            .detail-workspace-icon {
+                flex: 0 0 auto;
+                font-size: 14px;
+            }
+
+            .detail-title {
+                min-width: 0;
+                flex: 1;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 18px;
+            }
+
+            .wave-iconbutton.save {
+                width: 22px;
+                height: 22px;
+                justify-content: center;
+                border-radius: 4px;
+                opacity: 0.35;
+
+                &.changed {
+                    color: var(--accent-color);
+                    opacity: 0.95;
+                }
+
+                &:not(.disabled):hover {
+                    background-color: var(--button-grey-hover-bg);
+                    opacity: 1;
+                }
+            }
+        }
+
+        .detail-scrollable {
+            width: 100%;
+            max-height: 460px;
+            padding: 8px 10px 10px;
+        }
     }
 }
