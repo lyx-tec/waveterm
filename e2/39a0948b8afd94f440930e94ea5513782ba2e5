@@ -1,0 +1,42 @@
+pkg/blockcontroller/tsunamicontroller.go
+  s_1c4dad018cb544::t_227d6fe9c54146 295-298
+pkg/wshrpc/wshserver/wshserver.go
+  s_1c4dad018cb544::t_7d0f6e2858fc74 357-362,364
+  s_1c4dad018cb544::t_86a92de3cb1d44 351-355
+frontend/app/view/term/termwrap.ts
+  s_1c4dad018cb544::t_66dbdb66ab4d7b 852
+pkg/wshrpc/wshrpctypes.go
+  s_1c4dad018cb544::t_daa9ab3095417d 56
+  s_1c4dad018cb544::t_25e294a3c70fa7 319-321,323
+  s_1c4dad018cb544::t_aa01e37cde4010 322
+pkg/blockcontroller/shellcontroller.go
+  s_1c4dad018cb544::t_4d195bcd2f3ff2 316
+  s_1c4dad018cb544::t_133e1a1128c8d8 156-165
+pkg/blockcontroller/sessiondaemoncontroller.go
+  s_1c4dad018cb544::t_d39bd4bfdb1b2f 196-201,203
+  s_1c4dad018cb544::t_d3d7b1ac6de049 135
+  s_1c4dad018cb544::t_d2cce4c39641c8 202
+pkg/blockcontroller/blockcontroller.go
+  s_1c4dad018cb544::t_5ad56b0f9aa14f 516,539-562,564
+  s_1c4dad018cb544::t_fb69aa81040e79 518-538
+  s_1c4dad018cb544::t_ae8bde7ffef231 83
+  s_1c4dad018cb544::t_fc37976c727d96 180-183
+  s_1c4dad018cb544::t_63fb5060225758 563
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "e239a0948b8afd94f440930e94ea5513782ba2e5",
+  "prompts": {},
+  "logical_commit_id": "e239a0948b8afd94f440930e94ea5513782ba2e5",
+  "sessions": {
+    "s_1c4dad018cb544": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0f7c0efaaffezzGCBDy0IM8MA8",
+        "model": "deepseek-v4-pro"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}
