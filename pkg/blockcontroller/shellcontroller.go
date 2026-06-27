@@ -403,7 +403,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 		cmdOpts.Interactive = true
 		cmdOpts.Login = true
 		cmdOpts.Cwd = blockMeta.GetString(waveobj.MetaKey_CmdCwd, "")
-		if cmdOpts.Cwd != "" {
+		if cmdOpts.Cwd != "" && connUnion.ConnType == ConnType_Local {
 			cwdPath, err := wavebase.ExpandHomeDir(cmdOpts.Cwd)
 			if err != nil {
 				return nil, err
@@ -427,7 +427,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 	if connUnion.ConnType == ConnType_Wsl {
 		wslConn := connUnion.WslConn
 		if !connUnion.WshEnabled {
-			shellProc, err = shellexec.StartWslShellProcNoWsh(ctx, rc.TermSize, cmdStr, cmdOpts, wslConn)
+			shellProc, err = shellexec.StartWslShellProcNoWsh(ctx, rc.TermSize, cmdStr, cmdOpts, wslConn, connUnion.ShellType)
 			if err != nil {
 				return nil, err
 			}
@@ -451,7 +451,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 				wslConn.WshEnabled.Store(false)
 				blocklogger.Infof(logCtx, "[conndebug] error starting wsl shell proc with wsh: %v\n", err)
 				blocklogger.Infof(logCtx, "[conndebug] attempting install without wsh\n")
-				shellProc, err = shellexec.StartWslShellProcNoWsh(ctx, rc.TermSize, cmdStr, cmdOpts, wslConn)
+				shellProc, err = shellexec.StartWslShellProcNoWsh(ctx, rc.TermSize, cmdStr, cmdOpts, wslConn, connUnion.ShellType)
 				if err != nil {
 					return nil, err
 				}
@@ -460,7 +460,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 	} else if connUnion.ConnType == ConnType_Ssh {
 		conn := connUnion.SshConn
 		if !connUnion.WshEnabled {
-			shellProc, err = shellexec.StartRemoteShellProcNoWsh(ctx, rc.TermSize, cmdStr, cmdOpts, conn)
+			shellProc, err = shellexec.StartRemoteShellProcNoWsh(ctx, rc.TermSize, cmdStr, cmdOpts, conn, connUnion.ShellType)
 			if err != nil {
 				return nil, err
 			}
@@ -476,7 +476,7 @@ func (bc *ShellController) setupAndStartShellProcess(logCtx context.Context, rc 
 				conn.WshEnabled.Store(false)
 				blocklogger.Infof(logCtx, "[conndebug] error starting remote shell proc with wsh: %v\n", err)
 				blocklogger.Infof(logCtx, "[conndebug] attempting install without wsh\n")
-				shellProc, err = shellexec.StartRemoteShellProcNoWsh(ctx, rc.TermSize, cmdStr, cmdOpts, conn)
+				shellProc, err = shellexec.StartRemoteShellProcNoWsh(ctx, rc.TermSize, cmdStr, cmdOpts, conn, connUnion.ShellType)
 				if err != nil {
 					return nil, err
 				}
@@ -614,10 +614,16 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 }
 
 func (union *ConnUnion) getRemoteInfoAndShellType(blockMeta waveobj.MetaMapType) error {
-	if !union.WshEnabled {
-		return nil
-	}
 	if union.ConnType == ConnType_Ssh || union.ConnType == ConnType_Wsl {
+		if !union.WshEnabled {
+			if union.ConnType == ConnType_Ssh {
+				union.ShellPath = union.SshConn.GetConfigShellPath()
+			} else {
+				union.ShellPath = union.WslConn.GetConfigShellPath()
+			}
+			union.ShellType = shellutil.GetShellTypeFromShellPath(union.ShellPath)
+			return nil
+		}
 		connRoute := wshutil.MakeConnectionRouteId(union.ConnName)
 		remoteInfo, err := wshclient.RemoteGetInfoCommand(wshclient.GetBareRpcClient(), &wshrpc.RpcOpts{Route: connRoute, Timeout: 2000})
 		if err != nil {
@@ -715,7 +721,7 @@ func createCmdStrAndOpts(blockId string, blockMeta waveobj.MetaMapType, connName
 		return "", nil, fmt.Errorf("missing cmd in block meta")
 	}
 	cmdOpts.Cwd = blockMeta.GetString(waveobj.MetaKey_CmdCwd, "")
-	if cmdOpts.Cwd != "" {
+	if cmdOpts.Cwd != "" && conncontroller.IsLocalConnName(connName) {
 		cwdPath, err := wavebase.ExpandHomeDir(cmdOpts.Cwd)
 		if err != nil {
 			return "", nil, err

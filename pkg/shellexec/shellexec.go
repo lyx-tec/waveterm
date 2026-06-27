@@ -111,10 +111,50 @@ func checkCwd(cwd string) error {
 	if cwd == "" {
 		return fmt.Errorf("cwd is empty")
 	}
-	if _, err := os.Stat(cwd); err != nil {
+	info, err := os.Stat(cwd)
+	if err != nil {
 		return fmt.Errorf("error statting cwd %q: %w", cwd, err)
 	}
+	if !info.IsDir() {
+		return fmt.Errorf("cwd %q is not a directory", cwd)
+	}
 	return nil
+}
+
+func remoteCwdPrefix(cwd string, homeDir string, shellType string) string {
+	if cwd == "" {
+		return ""
+	}
+	if homeDir == "" {
+		homeDir = "~"
+	}
+	if strings.HasPrefix(cwd, "~/") {
+		cwd = homeDir + cwd[1:]
+	} else if cwd == "~" {
+		cwd = homeDir
+	}
+	switch shellType {
+	case shellutil.ShellType_fish:
+		return fmt.Sprintf("cd %s 2>/dev/null; or cd %s; ", shellutil.HardQuoteFish(cwd), shellutil.HardQuoteFish(homeDir))
+	case shellutil.ShellType_pwsh:
+		return fmt.Sprintf("Set-Location -LiteralPath %s -ErrorAction SilentlyContinue; if (-not $?) { Set-Location -LiteralPath %s }; ", shellutil.HardQuotePowerShell(cwd), shellutil.HardQuotePowerShell(homeDir))
+	default:
+		return fmt.Sprintf("cd %s 2>/dev/null || cd %s; ", shellutil.HardQuote(cwd), shellutil.HardQuote(homeDir))
+	}
+}
+
+func remoteCwdInitCommand(cwd string, shellType string) string {
+	if cwd == "" {
+		return ""
+	}
+	if shellType == "" || shellType == shellutil.ShellType_unknown {
+		return fmt.Sprintf("cd %s\n", shellutil.HardQuote(cwd))
+	}
+	prefix := remoteCwdPrefix(cwd, "~", shellType)
+	if prefix == "" {
+		return ""
+	}
+	return prefix + "\n"
 }
 
 type PipePty struct {
@@ -152,7 +192,7 @@ func (pp *PipePty) WriteString(s string) (n int, err error) {
 	return pp.Write([]byte(s))
 }
 
-func StartWslShellProcNoWsh(ctx context.Context, termSize waveobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *wslconn.WslConn) (*ShellProc, error) {
+func StartWslShellProcNoWsh(ctx context.Context, termSize waveobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *wslconn.WslConn, shellType string) (*ShellProc, error) {
 	client := conn.GetClient()
 	conn.Infof(ctx, "WSL-NEWSESSION (StartWslShellProcNoWsh)")
 
@@ -168,6 +208,9 @@ func StartWslShellProcNoWsh(ctx context.Context, termSize waveobj.TermSize, cmdS
 	cmdPty, err := pty.StartWithSize(ecmd, &pty.Winsize{Rows: uint16(termSize.Rows), Cols: uint16(termSize.Cols)})
 	if err != nil {
 		return nil, err
+	}
+	if cwdCmd := remoteCwdInitCommand(cmdOpts.Cwd, shellType); cwdCmd != "" {
+		_, _ = cmdPty.WriteString(cwdCmd)
 	}
 	cmdWrap := MakeCmdWrap(ecmd, cmdPty, true)
 	return &ShellProc{Cmd: cmdWrap, ConnName: conn.GetName(), CloseOnce: &sync.Once{}, DoneCh: make(chan any)}, nil
@@ -273,6 +316,7 @@ func StartWslShellProc(ctx context.Context, termSize waveobj.TermSize, cmdStr st
 		conn.Debugf(ctx, "adding JWT token to environment\n")
 		cmdCombined = fmt.Sprintf(`%s=%s %s`, wavebase.WaveJwtTokenVarName, jwtToken, cmdCombined)
 	}
+	cmdCombined = remoteCwdPrefix(cmdOpts.Cwd, remoteInfo.HomeDir, shellutil.ShellType_unknown) + cmdCombined
 	log.Printf("full combined command: %s", cmdCombined)
 	ecmd := exec.Command("wsl.exe", "~", "-d", client.Name(), "--", "sh", "-c", cmdCombined)
 	if termSize.Rows == 0 || termSize.Cols == 0 {
@@ -291,7 +335,7 @@ func StartWslShellProc(ctx context.Context, termSize waveobj.TermSize, cmdStr st
 	return &ShellProc{Cmd: cmdWrap, ConnName: conn.GetName(), CloseOnce: &sync.Once{}, DoneCh: make(chan any)}, nil
 }
 
-func StartRemoteShellProcNoWsh(ctx context.Context, termSize waveobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *conncontroller.SSHConn) (*ShellProc, error) {
+func StartRemoteShellProcNoWsh(ctx context.Context, termSize waveobj.TermSize, cmdStr string, cmdOpts CommandOptsType, conn *conncontroller.SSHConn, shellType string) (*ShellProc, error) {
 	client := conn.GetClient()
 	conn.Infof(ctx, "SSH-NEWSESSION (StartRemoteShellProcNoWsh)")
 	session, err := client.NewSession()
@@ -345,6 +389,9 @@ func StartRemoteShellProcNoWsh(ctx context.Context, termSize waveobj.TermSize, c
 	if err != nil {
 		cleanup()
 		return nil, err
+	}
+	if cwdCmd := remoteCwdInitCommand(cmdOpts.Cwd, shellType); cwdCmd != "" {
+		_, _ = pipePty.WriteString(cwdCmd)
 	}
 	return &ShellProc{Cmd: sessionWrap, ConnName: conn.GetName(), CloseOnce: &sync.Once{}, DoneCh: make(chan any)}, nil
 }
@@ -484,6 +531,7 @@ func StartRemoteShellProc(ctx context.Context, logCtx context.Context, termSize 
 		conn.Debugf(logCtx, "adding JWT token to environment\n")
 		cmdCombined = fmt.Sprintf(`%s=%s %s`, wavebase.WaveJwtTokenVarName, jwtToken, cmdCombined)
 	}
+	cmdCombined = remoteCwdPrefix(cmdOpts.Cwd, remoteInfo.HomeDir, shellType) + cmdCombined
 	shellutil.AddTokenSwapEntry(cmdOpts.SwapToken)
 	err = session.RequestPty("xterm-256color", termSize.Rows, termSize.Cols, nil)
 	if err != nil {
@@ -599,6 +647,7 @@ func StartRemoteShellJob(ctx context.Context, logCtx context.Context, termSize w
 		Cmd:      shellPath,
 		Args:     shellOpts,
 		Env:      env,
+		Cwd:      cmdOpts.Cwd,
 		TermSize: &termSize,
 		BlockId:  optBlockId,
 	}

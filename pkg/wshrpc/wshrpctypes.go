@@ -351,7 +351,6 @@ type CommandEventReadHistoryData struct {
 	MaxItems int    `json:"maxitems"`
 }
 
-
 type CpuDataRequest struct {
 	Id    string `json:"id"`
 	Count int    `json:"count"`
@@ -738,6 +737,7 @@ type CommandStartJobData struct {
 	Cmd        string            `json:"cmd"`
 	Args       []string          `json:"args"`
 	Env        map[string]string `json:"env"`
+	Cwd        string            `json:"cwd,omitempty"`
 	TermSize   waveobj.TermSize  `json:"termsize"`
 	StreamMeta *StreamMeta       `json:"streammeta,omitempty"`
 }
@@ -746,6 +746,7 @@ type CommandRemoteStartJobData struct {
 	Cmd                      string            `json:"cmd"`
 	Args                     []string          `json:"args"`
 	Env                      map[string]string `json:"env"`
+	Cwd                      string            `json:"cwd,omitempty"`
 	TermSize                 waveobj.TermSize  `json:"termsize"`
 	StreamMeta               *StreamMeta       `json:"streammeta,omitempty"`
 	JobAuthToken             string            `json:"jobauthtoken"`
@@ -821,6 +822,7 @@ type CommandJobControllerStartJobData struct {
 	Cmd      string            `json:"cmd"`
 	Args     []string          `json:"args"`
 	Env      map[string]string `json:"env"`
+	Cwd      string            `json:"cwd,omitempty"`
 	TermSize *waveobj.TermSize `json:"termsize,omitempty"`
 }
 
@@ -978,16 +980,16 @@ type CommandRecordSessionActivityData struct {
 }
 
 type SessionInfoRtnData struct {
-	DaemonId    string   `json:"daemonid"`
-	Name        string   `json:"name"`
-	Connection  string   `json:"connection"`
-	JobId       string   `json:"jobid,omitempty"`
-	IsAnonymous bool     `json:"isanonymous"`
-	Status      string   `json:"status"`
-	Cwd         string   `json:"cwd,omitempty"`
-	CreatedAt   int64    `json:"createdat"`
-	IdleTimeout int64    `json:"idletimeout"`
-	IdleSince   int64    `json:"idlesince,omitempty"`
-	LastActiveAt int64   `json:"lastactiveat,omitempty"`
-	Blocks      []string `json:"blocks,omitempty"`
+	DaemonId     string   `json:"daemonid"`
+	Name         string   `json:"name"`
+	Connection   string   `json:"connection"`
+	JobId        string   `json:"jobid,omitempty"`
+	IsAnonymous  bool     `json:"isanonymous"`
+	Status       string   `json:"status"`
+	Cwd          string   `json:"cwd,omitempty"`
+	CreatedAt    int64    `json:"createdat"`
+	IdleTimeout  int64    `json:"idletimeout"`
+	IdleSince    int64    `json:"idlesince,omitempty"`
+	LastActiveAt int64    `json:"lastactiveat,omitempty"`
+	Blocks       []string `json:"blocks,omitempty"`
 }

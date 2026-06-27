@@ -359,6 +359,37 @@ function getApi(): ElectronApi {
     return (window as any).api;
 }
 
+function applyWorkspaceDefaultsToBlockDef(blockDef: BlockDef): BlockDef {
+    const view = blockDef.meta?.view;
+    const file = blockDef.meta?.file;
+    const isTerm = view === "term";
+    const isFileBrowser = view === "preview" && (isBlank(file) || file === "~");
+    if (!isTerm && !isFileBrowser) {
+        return blockDef;
+    }
+    const workspace = globalStore.get(atoms.workspace);
+    if (workspace?.defaultconnname == null && workspace?.defaultcwd == null) {
+        return blockDef;
+    }
+    const meta = blockDef.meta ?? {};
+    const connName = meta.connection;
+    const cwd = meta["cmd:cwd"];
+    let nextMeta: Record<string, any> = meta;
+    if (workspace.defaultconnname && isLocalConnName(connName)) {
+        nextMeta = { ...nextMeta, connection: workspace.defaultconnname };
+    }
+    if (workspace.defaultcwd && isTerm && isBlank(cwd)) {
+        nextMeta = { ...nextMeta, "cmd:cwd": workspace.defaultcwd };
+    }
+    if (workspace.defaultcwd && isFileBrowser) {
+        nextMeta = { ...nextMeta, file: workspace.defaultcwd, "file:workspacecwd": true };
+    }
+    if (nextMeta === meta) {
+        return blockDef;
+    }
+    return { ...blockDef, meta: nextMeta };
+}
+
 async function createBlockSplitHorizontally(
     blockDef: BlockDef,
     targetBlockId: string,
@@ -366,6 +397,7 @@ async function createBlockSplitHorizontally(
 ): Promise<string> {
     const layoutModel = getLayoutModelForStaticTab();
     const rtOpts: RuntimeOpts = { termsize: { rows: 25, cols: 80 } };
+    blockDef = applyWorkspaceDefaultsToBlockDef(blockDef);
     const newBlockId = await ObjectService.CreateBlock(blockDef, rtOpts);
     const targetNodeId = layoutModel.getNodeByBlockId(targetBlockId)?.id;
     if (targetNodeId == null) {
@@ -389,6 +421,7 @@ async function createBlockSplitVertically(
 ): Promise<string> {
     const layoutModel = getLayoutModelForStaticTab();
     const rtOpts: RuntimeOpts = { termsize: { rows: 25, cols: 80 } };
+    blockDef = applyWorkspaceDefaultsToBlockDef(blockDef);
     const newBlockId = await ObjectService.CreateBlock(blockDef, rtOpts);
     const targetNodeId = layoutModel.getNodeByBlockId(targetBlockId)?.id;
     if (targetNodeId == null) {
@@ -408,6 +441,7 @@ async function createBlockSplitVertically(
 async function createBlock(blockDef: BlockDef, magnified = false, ephemeral = false): Promise<string> {
     const layoutModel = getLayoutModelForStaticTab();
     const rtOpts: RuntimeOpts = { termsize: { rows: 25, cols: 80 } };
+    blockDef = applyWorkspaceDefaultsToBlockDef(blockDef);
     const blockId = await ObjectService.CreateBlock(blockDef, rtOpts);
     if (ephemeral) {
         layoutModel.newEphemeralNode(blockId);
@@ -426,6 +460,7 @@ async function createBlock(blockDef: BlockDef, magnified = false, ephemeral = fa
 async function replaceBlock(blockId: string, blockDef: BlockDef, focus: boolean): Promise<string> {
     const layoutModel = getLayoutModelForStaticTab();
     const rtOpts: RuntimeOpts = { termsize: { rows: 25, cols: 80 } };
+    blockDef = applyWorkspaceDefaultsToBlockDef(blockDef);
     const newBlockId = await ObjectService.CreateBlock(blockDef, rtOpts);
     setTimeout(() => {
         fireAndForget(() => ObjectService.DeleteBlock(blockId));
@@ -685,7 +720,6 @@ export {
     getBlockComponentModel,
     getBlockMetaKeyAtom,
     getBlockTermDurableAtom,
-    getTabMetaKeyAtom,
     getConfigBackgroundAtom,
     getConnConfigKeyAtom,
     getConnStatusAtom,
@@ -697,6 +731,7 @@ export {
     getOverrideConfigAtom,
     getSettingsKeyAtom,
     getSettingsPrefixAtom,
+    getTabMetaKeyAtom,
     getUserName,
     globalPrimaryTabStartup,
     globalStore,

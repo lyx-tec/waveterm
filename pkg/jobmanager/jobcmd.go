@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -24,6 +25,7 @@ type CmdDef struct {
 	Cmd      string
 	Args     []string
 	Env      map[string]string
+	Cwd      string
 	TermSize waveobj.TermSize
 }
 
@@ -43,6 +45,20 @@ type JobCmd struct {
 	exitTs        int64
 }
 
+func expandRemoteHome(pathStr string) string {
+	if pathStr != "~" && !strings.HasPrefix(pathStr, "~/") {
+		return filepath.Clean(pathStr)
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil || homeDir == "" {
+		return filepath.Clean(pathStr)
+	}
+	if pathStr == "~" {
+		return homeDir
+	}
+	return filepath.Clean(filepath.Join(homeDir, pathStr[2:]))
+}
+
 func MakeJobCmd(jobId string, cmdDef CmdDef) (*JobCmd, error) {
 	jm := &JobCmd{
 		jobId: jobId,
@@ -56,6 +72,12 @@ func MakeJobCmd(jobId string, cmdDef CmdDef) (*JobCmd, error) {
 	}
 	ecmd := exec.Command(cmdDef.Cmd, cmdDef.Args...)
 	ecmd.Env = mergeEnv(os.Environ(), cmdDef.Env)
+	if cmdDef.Cwd != "" {
+		ecmd.Dir = expandRemoteHome(cmdDef.Cwd)
+		if info, err := os.Stat(ecmd.Dir); err != nil || !info.IsDir() {
+			ecmd.Dir, _ = os.UserHomeDir()
+		}
+	}
 	cmdPty, err := pty.StartWithSize(ecmd, &pty.Winsize{Rows: uint16(cmdDef.TermSize.Rows), Cols: uint16(cmdDef.TermSize.Cols)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to start command: %w", err)

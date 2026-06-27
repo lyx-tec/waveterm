@@ -417,6 +417,15 @@ export class PreviewModel implements ViewModel {
                         path,
                     },
                 });
+                const blockMeta = get(this.blockAtom)?.meta as Record<string, any>;
+                if (blockMeta?.["file:workspacecwd"] && (statFile?.notfound || !statFile?.isdir)) {
+                    const fallbackPath = await this.formatRemoteUri("~", get);
+                    return await this.env.rpc.FileInfoCommand(TabRpcClient, {
+                        info: {
+                            path: fallbackPath,
+                        },
+                    });
+                }
                 return statFile;
             } catch (e) {
                 const errorStatus: ErrorMsg = {
@@ -591,6 +600,7 @@ export class PreviewModel implements ViewModel {
         if (updateMeta == null) {
             return;
         }
+        (updateMeta as Record<string, any>)["file:workspacecwd"] = null;
         const blockOref = WOS.makeORef("block", this.blockId);
         await this.env.services.object.UpdateObjectMeta(blockOref, updateMeta);
 
@@ -627,6 +637,7 @@ export class PreviewModel implements ViewModel {
             return;
         }
         updateMeta.edit = false;
+        (updateMeta as Record<string, any>)["file:workspacecwd"] = null;
         const blockOref = WOS.makeORef("block", this.blockId);
         await this.env.services.object.UpdateObjectMeta(blockOref, updateMeta);
     }
@@ -639,6 +650,7 @@ export class PreviewModel implements ViewModel {
             return;
         }
         updateMeta.edit = false;
+        (updateMeta as Record<string, any>)["file:workspacecwd"] = null;
         const blockOref = WOS.makeORef("block", this.blockId);
         await this.env.services.object.UpdateObjectMeta(blockOref, updateMeta);
     }

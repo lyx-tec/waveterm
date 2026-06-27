@@ -316,18 +316,27 @@ func applyWorkspaceDefaultsToBlocks(ctx context.Context, workspaceId string, tab
 		if meta == nil {
 			meta = make(waveobj.MetaMapType)
 		}
+		view, _ := meta[waveobj.MetaKey_View].(string)
+		isTerm := view == "term"
+		file, _ := meta[waveobj.MetaKey_File].(string)
+		isFileBrowser := view == "preview" && (file == "" || file == "~")
 		updated := false
-		if ws.DefaultConnName != "" {
+		if ws.DefaultConnName != "" && (isTerm || isFileBrowser) {
 			if _, exists := meta[waveobj.MetaKey_Connection]; !exists {
 				meta[waveobj.MetaKey_Connection] = ws.DefaultConnName
 				updated = true
 			}
 		}
-		if ws.DefaultCwd != "" {
+		if ws.DefaultCwd != "" && isTerm {
 			if _, exists := meta[waveobj.MetaKey_CmdCwd]; !exists {
 				meta[waveobj.MetaKey_CmdCwd] = ws.DefaultCwd
 				updated = true
 			}
+		}
+		if ws.DefaultCwd != "" && isFileBrowser {
+			meta[waveobj.MetaKey_File] = ws.DefaultCwd
+			meta["file:workspacecwd"] = true
+			updated = true
 		}
 		if updated {
 			block.Meta = meta

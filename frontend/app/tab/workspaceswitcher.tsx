@@ -15,13 +15,13 @@ import clsx from "clsx";
 import { atom, PrimitiveAtom, useAtomValue, useSetAtom } from "jotai";
 import { splitAtom } from "jotai/utils";
 import { OverlayScrollbarsComponent } from "overlayscrollbars-react";
-import { CSSProperties, forwardRef, useCallback, useEffect, useMemo, useState } from "react";
+import { CSSProperties, forwardRef, useCallback, useEffect, useMemo } from "react";
 import WorkspaceSVG from "../asset/workspace.svg";
 import { IconButton } from "../element/iconbutton";
 import { makeORef } from "../store/wos";
 import { waveEventSubscribeSingle } from "../store/wps";
-import { WorkspaceEditor } from "./workspaceeditor";
 import "./workspaceswitcher.scss";
+import { WorkspaceSwitcherDetail } from "./workspaceswitcherdetail";
 
 export type WorkspaceSwitcherEnv = WaveEnvSubset<{
     electron: {
@@ -43,38 +43,10 @@ type WorkspaceListEntry = {
     workspace: Workspace;
 };
 
-type WorkspaceDraft = {
-    name: string;
-    icon: string;
-    color: string;
-    defaultconnname: string;
-    defaultcwd: string;
-};
-
 type WorkspaceList = WorkspaceListEntry[];
 const workspaceMapAtom = atom<WorkspaceList>([]);
 const workspaceSplitAtom = splitAtom(workspaceMapAtom);
 const editingWorkspaceAtom = atom<string>();
-
-function makeWorkspaceDraft(workspace: Workspace): WorkspaceDraft {
-    return {
-        name: workspace.name,
-        icon: workspace.icon,
-        color: workspace.color,
-        defaultconnname: workspace.defaultconnname ?? "",
-        defaultcwd: workspace.defaultcwd ?? "",
-    };
-}
-
-function isWorkspaceDraftChanged(workspace: Workspace, draft: WorkspaceDraft): boolean {
-    return (
-        workspace.name !== draft.name ||
-        workspace.icon !== draft.icon ||
-        workspace.color !== draft.color ||
-        (workspace.defaultconnname ?? "") !== draft.defaultconnname ||
-        (workspace.defaultcwd ?? "") !== draft.defaultcwd
-    );
-}
 
 const WorkspaceSwitcher = forwardRef<HTMLDivElement>((_, ref) => {
     const env = useWaveEnv<WorkspaceSwitcherEnv>();
@@ -117,6 +89,16 @@ const WorkspaceSwitcher = forwardRef<HTMLDivElement>((_, ref) => {
 
     const onDeleteWorkspace = useCallback((workspaceId: string) => {
         env.electron.deleteWorkspace(workspaceId);
+    }, []);
+
+    const onWorkspaceUpdated = useCallback((updatedWorkspace: Workspace) => {
+        setWorkspaceList((workspaceEntries) =>
+            workspaceEntries.map((workspaceEntry) =>
+                workspaceEntry.workspace.oid === updatedWorkspace.oid
+                    ? { ...workspaceEntry, workspace: updatedWorkspace }
+                    : workspaceEntry
+            )
+        );
     }, []);
 
     const isActiveWorkspaceSaved = !!(activeWorkspace.name && activeWorkspace.icon);
@@ -165,7 +147,12 @@ const WorkspaceSwitcher = forwardRef<HTMLDivElement>((_, ref) => {
             </PopoverButton>
             <PopoverContent className="workspace-switcher-content">
                 {editingWorkspaceEntry ? (
-                    <WorkspaceSwitcherDetail entry={editingWorkspaceEntry} onDeleteWorkspace={onDeleteWorkspace} />
+                    <WorkspaceSwitcherDetail
+                        entry={editingWorkspaceEntry}
+                        onBack={() => setEditingWorkspace(null)}
+                        onDeleteWorkspace={onDeleteWorkspace}
+                        onWorkspaceUpdated={onWorkspaceUpdated}
+                    />
                 ) : (
                     <>
                         <div className="title">{isActiveWorkspaceSaved ? "Switch workspace" : "Open workspace"}</div>
@@ -269,116 +256,6 @@ const WorkspaceSwitcherItem = ({ entryAtom }: { entryAtom: PrimitiveAtom<Workspa
                     </ExpandableMenuItemRightElement>
                 </div>
             </ExpandableMenuItem>
-        </div>
-    );
-};
-
-const WorkspaceSwitcherDetail = ({
-    entry,
-    onDeleteWorkspace,
-}: {
-    entry: WorkspaceListEntry;
-    onDeleteWorkspace: (workspaceId: string) => void;
-}) => {
-    const env = useWaveEnv<WorkspaceSwitcherEnv>();
-    const setWorkspaceList = useSetAtom(workspaceMapAtom);
-    const setEditingWorkspace = useSetAtom(editingWorkspaceAtom);
-    const workspace = entry.workspace;
-    const [draft, setDraft] = useState<WorkspaceDraft>(() => makeWorkspaceDraft(workspace));
-    const [saving, setSaving] = useState(false);
-
-    useEffect(() => {
-        setDraft(makeWorkspaceDraft(workspace));
-    }, [workspace.oid]);
-
-    const hasChanges = isWorkspaceDraftChanged(workspace, draft);
-    const canSave = hasChanges && draft.name !== "" && !saving;
-
-    const setWorkspaceField = useCallback((patch: Partial<WorkspaceDraft>) => {
-        setDraft((currentDraft) => ({ ...currentDraft, ...patch }));
-    }, []);
-
-    const saveWorkspace = useCallback(() => {
-        if (!canSave) {
-            return;
-        }
-        fireAndForget(async () => {
-            setSaving(true);
-            try {
-                await env.services.workspace.UpdateWorkspace(
-                    workspace.oid,
-                    draft.name,
-                    draft.icon,
-                    draft.color,
-                    draft.defaultconnname,
-                    draft.defaultcwd,
-                    false
-                );
-                const updated = {
-                    ...workspace,
-                    name: draft.name,
-                    icon: draft.icon,
-                    color: draft.color,
-                    defaultconnname: draft.defaultconnname,
-                    defaultcwd: draft.defaultcwd,
-                };
-                setWorkspaceList((workspaceEntries) =>
-                    workspaceEntries.map((workspaceEntry) =>
-                        workspaceEntry.workspace.oid === workspace.oid
-                            ? { ...workspaceEntry, workspace: updated }
-                            : workspaceEntry
-                    )
-                );
-            } finally {
-                setSaving(false);
-            }
-        });
-    }, [canSave, draft, workspace]);
-
-    const backIconDecl: IconButtonDecl = {
-        elemtype: "iconbutton",
-        className: "back",
-        icon: "chevron-left",
-        title: "Back to workspaces",
-        click: () => setEditingWorkspace(null),
-    };
-    const saveIconDecl: IconButtonDecl = {
-        elemtype: "iconbutton",
-        className: clsx("save", { changed: canSave }),
-        icon: saving ? "refresh" : "floppy-disk",
-        iconSpin: saving,
-        title: hasChanges ? "Save workspace" : "No workspace changes",
-        disabled: !canSave,
-        click: () => saveWorkspace(),
-    };
-
-    return (
-        <div className="workspace-detail-page">
-            <div className="detail-header">
-                <IconButton decl={backIconDecl} />
-                <i
-                    className={clsx("detail-workspace-icon", makeIconClass(draft.icon, true))}
-                    style={{ color: draft.color }}
-                />
-                <div className="detail-title">{draft.name}</div>
-                <IconButton decl={saveIconDecl} />
-            </div>
-            <OverlayScrollbarsComponent className="detail-scrollable" options={{ scrollbars: { autoHide: "leave" } }}>
-                <WorkspaceEditor
-                    title={draft.name}
-                    icon={draft.icon}
-                    color={draft.color}
-                    connName={draft.defaultconnname}
-                    cwd={draft.defaultcwd}
-                    focusInput
-                    onTitleChange={(newTitle) => setWorkspaceField({ name: newTitle })}
-                    onColorChange={(newColor) => setWorkspaceField({ color: newColor })}
-                    onIconChange={(newIcon) => setWorkspaceField({ icon: newIcon })}
-                    onConnNameChange={(newConnName) => setWorkspaceField({ defaultconnname: newConnName })}
-                    onCwdChange={(newCwd) => setWorkspaceField({ defaultcwd: newCwd })}
-                    onDeleteWorkspace={() => onDeleteWorkspace(workspace.oid)}
-                />
-            </OverlayScrollbarsComponent>
         </div>
     );
 };
