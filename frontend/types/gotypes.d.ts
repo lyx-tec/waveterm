@@ -698,6 +698,12 @@ declare global {
         delete?: boolean;
     };
 
+    // wshrpc.CommandSetTerminalSizeData
+    type CommandSetTerminalSizeData = {
+        blockid: string;
+        termsize: TermSize;
+    };
+
     // wshrpc.CommandStartBuilderData
     type CommandStartBuilderData = {
         builderid: string;

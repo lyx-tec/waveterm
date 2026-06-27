@@ -153,6 +153,16 @@ func (sc *ShellController) SendInput(inputUnion *BlockInputUnion) error {
 	return nil
 }
 
+func (sc *ShellController) ApplyTermSize(termSize waveobj.TermSize) error {
+	sc.Lock.Lock()
+	shellProc := sc.ShellProc
+	sc.Lock.Unlock()
+	if shellProc == nil {
+		return nil
+	}
+	return shellProc.Cmd.SetSize(termSize.Rows, termSize.Cols)
+}
+
 func (sc *ShellController) WithLock(f func()) {
 	sc.Lock.Lock()
 	defer sc.Lock.Unlock()
@@ -303,12 +313,7 @@ func (sc *ShellController) run(logCtx context.Context, bdata *waveobj.Block, blo
 				panichandler.PanicHandler("blockcontroller:run-shell-command", recover())
 			}()
 			defer sc.UnlockRunLock()
-			var termSize waveobj.TermSize
-			if rtOpts != nil {
-				termSize = rtOpts.TermSize
-			} else {
-				termSize = getTermSize(bdata)
-			}
+			termSize := getLatestTermSize(sc.BlockId)
 			err := sc.DoRunShellCommand(logCtx, &RunShellOpts{TermSize: termSize}, bdata.Meta)
 			if err != nil {
 				debugLog(logCtx, "error running shell: %v\n", err)
@@ -568,9 +573,6 @@ func (bc *ShellController) manageRunningShellProcess(shellProc *shellexec.ShellP
 		for ic := range shellInputCh {
 			if len(ic.InputData) > 0 {
 				shellProc.Cmd.Write(ic.InputData)
-			}
-			if ic.TermSize != nil {
-				updateTermSize(shellProc, bc.BlockId, *ic.TermSize)
 			}
 		}
 	}()
@@ -875,36 +877,4 @@ func getCustomInitScriptValue(meta waveobj.MetaMapType, connName string, shellTy
 		}
 	}
 	return "", ""
-}
-
-func updateTermSize(shellProc *shellexec.ShellProc, blockId string, termSize waveobj.TermSize) {
-	err := setTermSizeInDB(blockId, termSize)
-	if err != nil {
-		log.Printf("error setting pty size: %v\n", err)
-	}
-	err = shellProc.Cmd.SetSize(termSize.Rows, termSize.Cols)
-	if err != nil {
-		log.Printf("error setting pty size: %v\n", err)
-	}
-}
-
-func setTermSizeInDB(blockId string, termSize waveobj.TermSize) error {
-	ctx, cancelFn := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancelFn()
-	ctx = waveobj.ContextWithUpdates(ctx)
-	bdata, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
-	if err != nil {
-		return fmt.Errorf("error getting block data: %v", err)
-	}
-	if bdata.RuntimeOpts == nil {
-		bdata.RuntimeOpts = &waveobj.RuntimeOpts{}
-	}
-	bdata.RuntimeOpts.TermSize = termSize
-	err = wstore.DBUpdate(ctx, bdata)
-	if err != nil {
-		return fmt.Errorf("error updating block data: %v", err)
-	}
-	updates := waveobj.ContextGetUpdatesRtn(ctx)
-	wps.Broker.SendUpdateEvents(updates)
-	return nil
 }

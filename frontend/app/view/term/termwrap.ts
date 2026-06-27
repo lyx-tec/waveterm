@@ -849,7 +849,7 @@ export class TermWrap {
         }
         const termSize: TermSize = { rows: this.terminal.rows, cols: this.terminal.cols };
         try {
-            await RpcApi.ControllerInputCommand(TabRpcClient, { blockid: this.blockId, termsize: termSize });
+            await RpcApi.SetTerminalSizeCommand(TabRpcClient, { blockid: this.blockId, termsize: termSize });
         } catch (e) {
             console.log("error syncing terminal size", this.blockId, e);
         }

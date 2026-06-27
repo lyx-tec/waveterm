@@ -132,13 +132,7 @@ func (sdc *SessionDaemonController) syncJobIdToBlocks(ctx context.Context, jobId
 }
 
 func (sdc *SessionDaemonController) startNewJob(ctx context.Context, blockMeta waveobj.MetaMapType, rtOpts *waveobj.RuntimeOpts) (string, error) {
-	termSize := waveobj.TermSize{
-		Rows: shellutil.DefaultTermRows,
-		Cols: shellutil.DefaultTermCols,
-	}
-	if rtOpts != nil && rtOpts.TermSize.Rows > 0 && rtOpts.TermSize.Cols > 0 {
-		termSize = rtOpts.TermSize
-	}
+	termSize := getLatestTermSize(sdc.BlockId)
 	cmdStr := blockMeta.GetString(waveobj.MetaKey_Cmd, "")
 	cwd := blockMeta.GetString(waveobj.MetaKey_CmdCwd, "")
 	opts, err := remote.ParseOpts(sdc.ConnName)
@@ -197,6 +191,14 @@ func (sdc *SessionDaemonController) SendInput(inputUnion *BlockInputUnion) error
 		return fmt.Errorf("session daemon %s not found", sdc.DaemonId)
 	}
 	return daemon.SendInput(context.Background(), inputUnion.InputData, inputUnion.SigName, inputUnion.TermSize)
+}
+
+func (sdc *SessionDaemonController) ApplyTermSize(termSize waveobj.TermSize) error {
+	daemon := sessiondaemon.Manager.Get(sdc.DaemonId)
+	if daemon == nil {
+		return nil
+	}
+	return daemon.SendInput(context.Background(), nil, "", &termSize)
 }
 
 func (sdc *SessionDaemonController) GetRuntimeStatus() *BlockControllerRuntimeStatus {

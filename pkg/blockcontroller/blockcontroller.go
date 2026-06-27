@@ -80,6 +80,7 @@ type Controller interface {
 	GetRuntimeStatus() *BlockControllerRuntimeStatus // does not return nil
 	GetConnName() string
 	SendInput(input *BlockInputUnion) error
+	ApplyTermSize(termSize waveobj.TermSize) error
 }
 
 // Registry for all controllers
@@ -174,6 +175,10 @@ func ResyncController(ctx context.Context, tabId string, blockId string, rtOpts 
 	blockData, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
 	if err != nil {
 		return fmt.Errorf("error getting block: %w", err)
+	}
+
+	if rtOpts != nil && rtOpts.TermSize.Rows > 0 && rtOpts.TermSize.Cols > 0 {
+		SetTerminalSize(blockId, rtOpts.TermSize)
 	}
 
 	controllerName := blockData.Meta.GetString(waveobj.MetaKey_Controller, "")
@@ -508,6 +513,53 @@ func SendInput(blockId string, inputUnion *BlockInputUnion) error {
 	}
 	sendConnMonitorInputNotification(controller)
 	return controller.SendInput(inputUnion)
+}
+
+func setTermSizeInDB(blockId string, termSize waveobj.TermSize) error {
+	ctx, cancelFn := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelFn()
+	ctx = waveobj.ContextWithUpdates(ctx)
+	bdata, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+	if err != nil {
+		return fmt.Errorf("error getting block data: %v", err)
+	}
+	if bdata.RuntimeOpts == nil {
+		bdata.RuntimeOpts = &waveobj.RuntimeOpts{}
+	}
+	bdata.RuntimeOpts.TermSize = termSize
+	err = wstore.DBUpdate(ctx, bdata)
+	if err != nil {
+		return fmt.Errorf("error updating block data: %v", err)
+	}
+	updates := waveobj.ContextGetUpdatesRtn(ctx)
+	wps.Broker.SendUpdateEvents(updates)
+	return nil
+}
+
+func SetTerminalSize(blockId string, termSize waveobj.TermSize) {
+	if termSize.Rows <= 0 || termSize.Cols <= 0 {
+		log.Printf("[blockcontroller] invalid term size for block %s: %v", blockId, termSize)
+		return
+	}
+	if err := setTermSizeInDB(blockId, termSize); err != nil {
+		log.Printf("[blockcontroller] error writing term size to DB for block %s: %v", blockId, err)
+	}
+	if c := getController(blockId); c != nil {
+		if err := c.ApplyTermSize(termSize); err != nil {
+			log.Printf("[blockcontroller] error applying term size for block %s: %v", blockId, err)
+		}
+	}
+}
+
+func getLatestTermSize(blockId string) waveobj.TermSize {
+	ctx, cancelFn := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelFn()
+	bdata, err := wstore.DBMustGet[*waveobj.Block](ctx, blockId)
+	if err != nil {
+		log.Printf("[blockcontroller] error reading block %s for term size: %v, using defaults", blockId, err)
+		return waveobj.TermSize{Rows: shellutil.DefaultTermRows, Cols: shellutil.DefaultTermCols}
+	}
+	return getTermSize(bdata)
 }
 
 // only call this on shutdown
