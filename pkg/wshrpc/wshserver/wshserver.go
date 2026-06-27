@@ -1569,6 +1569,7 @@ func (ws *WshServer) JobControllerStartJobCommand(ctx context.Context, data wshr
 		Cmd:      data.Cmd,
 		Args:     data.Args,
 		Env:      data.Env,
+		Cwd:      data.Cwd,
 		TermSize: data.TermSize,
 	}
 	return jobcontroller.StartJob(ctx, params)

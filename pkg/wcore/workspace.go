@@ -71,12 +71,12 @@ func CreateWorkspace(ctx context.Context, name string, icon string, color string
 		Event: wps.Event_WorkspaceUpdate,
 	})
 
-	ws, _, err = UpdateWorkspace(ctx, ws.OID, name, icon, color, applyDefaults)
+	ws, _, err = UpdateWorkspace(ctx, ws.OID, name, icon, color, "", "", applyDefaults)
 	return ws, err
 }
 
 // Returns updated workspace, whether it was updated, error.
-func UpdateWorkspace(ctx context.Context, workspaceId string, name string, icon string, color string, applyDefaults bool) (*waveobj.Workspace, bool, error) {
+func UpdateWorkspace(ctx context.Context, workspaceId string, name string, icon string, color string, defaultConnName string, defaultCwd string, applyDefaults bool) (*waveobj.Workspace, bool, error) {
 	ws, err := GetWorkspace(ctx, workspaceId)
 	updated := false
 	if err != nil {
@@ -106,6 +106,14 @@ func UpdateWorkspace(ctx context.Context, workspaceId string, name string, icon 
 			wsList = waveobj.WorkspaceList{}
 		}
 		ws.Color = WorkspaceColors[len(wsList)%len(WorkspaceColors)]
+		updated = true
+	}
+	if defaultConnName != ws.DefaultConnName {
+		ws.DefaultConnName = defaultConnName
+		updated = true
+	}
+	if defaultCwd != ws.DefaultCwd {
+		ws.DefaultCwd = defaultCwd
 		updated = true
 	}
 	if updated {
@@ -254,6 +262,7 @@ func CreateTab(ctx context.Context, workspaceId string, tabName string, activate
 		if err != nil {
 			return tab.OID, fmt.Errorf("error applying new tab layout: %w", err)
 		}
+		applyWorkspaceDefaultsToBlocks(ctx, workspaceId, tab)
 		tabBg := getTabBackground()
 		if tabBg != "" {
 			tabORef := waveobj.ORefFromWaveObj(tab)
@@ -288,6 +297,52 @@ func createTabObj(ctx context.Context, workspaceId string, name string, meta wav
 	wstore.DBInsert(ctx, layoutState)
 	wstore.DBUpdate(ctx, ws)
 	return tab, nil
+}
+
+func applyWorkspaceDefaultsToBlocks(ctx context.Context, workspaceId string, tab *waveobj.Tab) {
+	ws, err := wstore.DBGet[*waveobj.Workspace](ctx, workspaceId)
+	if err != nil || ws == nil {
+		return
+	}
+	if ws.DefaultConnName == "" && ws.DefaultCwd == "" {
+		return
+	}
+	for _, blockId := range tab.BlockIds {
+		block, err := wstore.DBGet[*waveobj.Block](ctx, blockId)
+		if err != nil || block == nil {
+			continue
+		}
+		meta := block.Meta
+		if meta == nil {
+			meta = make(waveobj.MetaMapType)
+		}
+		view, _ := meta[waveobj.MetaKey_View].(string)
+		isTerm := view == "term"
+		file, _ := meta[waveobj.MetaKey_File].(string)
+		isFileBrowser := view == "preview" && (file == "" || file == "~")
+		updated := false
+		if ws.DefaultConnName != "" && (isTerm || isFileBrowser) {
+			if _, exists := meta[waveobj.MetaKey_Connection]; !exists {
+				meta[waveobj.MetaKey_Connection] = ws.DefaultConnName
+				updated = true
+			}
+		}
+		if ws.DefaultCwd != "" && isTerm {
+			if _, exists := meta[waveobj.MetaKey_CmdCwd]; !exists {
+				meta[waveobj.MetaKey_CmdCwd] = ws.DefaultCwd
+				updated = true
+			}
+		}
+		if ws.DefaultCwd != "" && isFileBrowser {
+			meta[waveobj.MetaKey_File] = ""
+			meta[waveobj.MetaKey_FileCwd] = ws.DefaultCwd
+			updated = true
+		}
+		if updated {
+			block.Meta = meta
+			wstore.DBUpdate(ctx, block)
+		}
+	}
 }
 
 // Must delete all blocks individually first.

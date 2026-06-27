@@ -382,11 +382,16 @@ export class PreviewModel implements ViewModel {
             return null;
         });
         this.metaFilePath = atom<string>((get) => {
-            const file = get(this.blockAtom)?.meta?.file;
-            if (file == null) {
-                return "~";
+            const blockMeta = get(this.blockAtom)?.meta;
+            const file = blockMeta?.file;
+            if (!isBlank(file)) {
+                return file;
             }
-            return file;
+            const cwd = blockMeta?.["file:cwd"];
+            if (!isBlank(cwd)) {
+                return cwd;
+            }
+            return "~";
         });
         this.statFilePath = atom<Promise<string>>(async (get) => {
             const fileInfo = await get(this.statFile);
@@ -417,6 +422,16 @@ export class PreviewModel implements ViewModel {
                         path,
                     },
                 });
+                const blockMeta = get(this.blockAtom)?.meta;
+                const usesInitialCwd = isBlank(blockMeta?.file) && !isBlank(blockMeta?.["file:cwd"]);
+                if (usesInitialCwd && (statFile?.notfound || !statFile?.isdir)) {
+                    const fallbackPath = await this.formatRemoteUri("~", get);
+                    return await this.env.rpc.FileInfoCommand(TabRpcClient, {
+                        info: {
+                            path: fallbackPath,
+                        },
+                    });
+                }
                 return statFile;
             } catch (e) {
                 const errorStatus: ErrorMsg = {

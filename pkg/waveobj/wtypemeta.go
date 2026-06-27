@@ -15,6 +15,7 @@ type MetaTSType struct {
 	View           string   `json:"view,omitempty"`
 	Controller     string   `json:"controller,omitempty"`
 	File           string   `json:"file,omitempty"`
+	FileCwd        string   `json:"file:cwd,omitempty"`
 	Url            string   `json:"url,omitempty"`
 	PinnedUrl      string   `json:"pinnedurl,omitempty"`
 	Connection     string   `json:"connection,omitempty"`
@@ -61,7 +62,7 @@ type MetaTSType struct {
 	CmdInitScriptBash string            `json:"cmd:initscript.bash,omitempty"`
 	CmdInitScriptZsh  string            `json:"cmd:initscript.zsh,omitempty"`
 	CmdInitScriptPwsh string            `json:"cmd:initscript.pwsh,omitempty"`
-	CmdInitScriptFish string `json:"cmd:initscript.fish,omitempty"`
+	CmdInitScriptFish string            `json:"cmd:initscript.fish,omitempty"`
 
 	SessionDaemonId string `json:"session:daemonid,omitempty"`
 
@@ -104,8 +105,8 @@ type MetaTSType struct {
 	BgActiveBorderColor string  `json:"bg:activebordercolor,omitempty"` // frame:activebordercolor
 
 	// for workspace
-	LayoutVTabBarWidth      int  `json:"layout:vtabbarwidth,omitempty"`
-	LayoutWidgetsVisible    *bool `json:"layout:widgetsvisible,omitempty"`
+	LayoutVTabBarWidth   int   `json:"layout:vtabbarwidth,omitempty"`
+	LayoutWidgetsVisible *bool `json:"layout:widgetsvisible,omitempty"`
 
 	// for tabs+waveai
 	WaveAiPanelOpen     bool   `json:"waveai:panelopen,omitempty"`

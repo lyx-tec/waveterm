@@ -188,6 +188,11 @@ export class WorkspaceServiceType {
         return callBackendService(this?.waveEnv, "workspace", "GetColors", Array.from(arguments))
     }
 
+    // @returns connectionNames
+    GetConnectionNames(): Promise<string[]> {
+        return callBackendService(this?.waveEnv, "workspace", "GetConnectionNames", Array.from(arguments))
+    }
+
     // @returns icons
     GetIcons(): Promise<string[]> {
         return callBackendService(this?.waveEnv, "workspace", "GetIcons", Array.from(arguments))
@@ -207,7 +212,7 @@ export class WorkspaceServiceType {
     }
 
     // @returns object updates
-    UpdateWorkspace(workspaceId: string, name: string, icon: string, color: string, applyDefaults: boolean): Promise<void> {
+    UpdateWorkspace(workspaceId: string, name: string, icon: string, color: string, defaultConnName: string, defaultCwd: string, applyDefaults: boolean): Promise<void> {
         return callBackendService(this?.waveEnv, "workspace", "UpdateWorkspace", Array.from(arguments))
     }
 }

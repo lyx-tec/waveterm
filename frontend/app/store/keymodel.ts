@@ -361,17 +361,29 @@ function getDefaultNewBlockDef(): BlockDef {
     };
     const layoutModel = getLayoutModelForStaticTab();
     const focusedNode = globalStore.get(layoutModel.focusedNode);
+    let hasExplicitConn = false;
+    let hasExplicitCwd = false;
     if (focusedNode != null) {
         const blockAtom = WOS.getWaveObjectAtom<Block>(WOS.makeORef("block", focusedNode.data?.blockId));
         const blockData = globalStore.get(blockAtom);
         if (blockData?.meta?.view == "term") {
             if (blockData?.meta?.["cmd:cwd"] != null) {
                 termBlockDef.meta["cmd:cwd"] = blockData.meta["cmd:cwd"];
+                hasExplicitCwd = true;
             }
         }
         if (blockData?.meta?.connection != null) {
             termBlockDef.meta.connection = blockData.meta.connection;
+            hasExplicitConn = true;
         }
+    }
+    // fall back to workspace defaults when the focused block has no explicit values
+    const workspace = globalStore.get(atoms.workspace);
+    if (!hasExplicitConn && workspace?.defaultconnname) {
+        termBlockDef.meta.connection = workspace.defaultconnname;
+    }
+    if (!hasExplicitCwd && workspace?.defaultcwd) {
+        termBlockDef.meta["cmd:cwd"] = workspace.defaultcwd;
     }
     return termBlockDef;
 }

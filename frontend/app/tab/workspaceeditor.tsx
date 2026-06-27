@@ -4,6 +4,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Button } from "../element/button";
 import { Input } from "../element/input";
 import { WorkspaceService } from "../store/services";
+import { WorkspaceConnectionSelector } from "./workspaceconnectionselector";
 import "./workspaceeditor.scss";
 
 interface ColorSelectorProps {
@@ -64,33 +65,47 @@ interface WorkspaceEditorProps {
     title: string;
     icon: string;
     color: string;
+    connName: string;
+    cwd: string;
     focusInput: boolean;
     onTitleChange: (newTitle: string) => void;
     onColorChange: (newColor: string) => void;
     onIconChange: (newIcon: string) => void;
+    onConnNameChange: (newConnName: string) => void;
+    onCwdChange: (newCwd: string) => void;
     onDeleteWorkspace: () => void;
 }
+
 const WorkspaceEditorComponent = ({
     title,
     icon,
     color,
+    connName,
+    cwd,
     focusInput,
     onTitleChange,
     onColorChange,
     onIconChange,
+    onConnNameChange,
+    onCwdChange,
     onDeleteWorkspace,
 }: WorkspaceEditorProps) => {
     const inputRef = useRef<HTMLInputElement>(null);
 
     const [colors, setColors] = useState<string[]>([]);
     const [icons, setIcons] = useState<string[]>([]);
+    const [connectionNames, setConnectionNames] = useState<string[]>([]);
 
     useEffect(() => {
         fireAndForget(async () => {
-            const colors = await WorkspaceService.GetColors();
-            const icons = await WorkspaceService.GetIcons();
-            setColors(colors);
-            setIcons(icons);
+            const [clrs, ics, conns] = await Promise.all([
+                WorkspaceService.GetColors(),
+                WorkspaceService.GetIcons(),
+                WorkspaceService.GetConnectionNames(),
+            ]);
+            setColors(clrs);
+            setIcons(ics);
+            setConnectionNames(conns);
         });
     }, []);
 
@@ -111,6 +126,12 @@ const WorkspaceEditorComponent = ({
                 autoFocus
                 autoSelect
             />
+            <WorkspaceConnectionSelector
+                connectionNames={connectionNames}
+                value={connName}
+                onChange={onConnNameChange}
+            />
+            <Input className="py-[3px]" onChange={onCwdChange} value={cwd} placeholder="Default work directory" />
             <ColorSelector selectedColor={color} colors={colors} onSelect={onColorChange} />
             <IconSelector selectedIcon={icon} icons={icons} onSelect={onIconChange} />
             <div className="delete-ws-btn-wrapper">
@@ -122,4 +143,4 @@ const WorkspaceEditorComponent = ({
     );
 };
 
-export const WorkspaceEditor = memo(WorkspaceEditorComponent) as typeof WorkspaceEditorComponent;
+export const WorkspaceEditor = memo(WorkspaceEditorComponent);

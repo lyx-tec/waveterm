@@ -1,13 +1,81 @@
 .workspace-editor {
     width: 100%;
+
     .input {
         margin: 5px 0 10px;
     }
 
+    .connection-selector {
+        position: relative;
+        margin: 5px 0 10px;
+
+        .connection-input-wrapper {
+            position: relative;
+            width: 100%;
+        }
+
+        .connection-input {
+            padding-right: 24px;
+        }
+
+        .dropdown-arrow {
+            position: absolute;
+            right: 7px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 10px;
+            cursor: pointer;
+            color: var(--main-text-color);
+            transition: transform 0.15s ease;
+
+            &.open {
+                transform: translateY(-50%) rotate(180deg);
+            }
+        }
+
+        .connection-dropdown {
+            position: absolute;
+            z-index: 1000;
+            left: 0;
+            right: 0;
+            top: calc(100% + 4px);
+            background: var(--modal-bg-color);
+            border: 1px solid var(--modal-border-color);
+            border-radius: 6px;
+            box-shadow: 0px 8px 16px rgba(0, 0, 0, 0.3);
+            padding: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+
+            .dropdown-item {
+                cursor: pointer;
+                padding: 5px 8px;
+                border-radius: 4px;
+                font-size: 12px;
+                color: var(--main-text-color);
+
+                &:hover {
+                    background-color: var(--highlight-bg-color);
+                }
+
+                &.selected {
+                    background-color: rgb(from var(--accent-color) r g b / 0.5);
+                }
+            }
+
+            .dropdown-divider {
+                height: 1px;
+                background: var(--modal-border-color);
+                margin: 4px 0;
+            }
+        }
+    }
+
     .color-selector {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(15px, 15px)); // Ensures each color circle has a fixed 14px size
-        grid-gap: 18.5px; // Space between items
+        grid-template-columns: repeat(auto-fit, minmax(15px, 15px));
+        grid-gap: 18.5px;
         justify-content: center;
         align-items: center;
         margin-top: 5px;
@@ -21,7 +89,6 @@
             cursor: pointer;
             position: relative;
 
-            // Border offset outward
             &:before {
                 content: "";
                 position: absolute;
@@ -34,16 +101,23 @@
             }
 
             &.selected:before {
-                border-color: var(--main-text-color); // Highlight for the selected circle
+                border-color: var(--main-text-color);
             }
         }
     }
 
+    .delete-ws-btn-wrapper {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 10px;
+    }
+
     .icon-selector {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(16px, 16px)); // Ensures each color circle has a fixed 14px size
-        grid-column-gap: 17.5px; // Space between items
-        grid-row-gap: 13px; // Space between items
+        grid-template-columns: repeat(auto-fit, minmax(16px, 16px));
+        grid-column-gap: 17.5px;
+        grid-row-gap: 13px;
         justify-content: center;
         align-items: center;
         margin-top: 15px;
@@ -59,12 +133,5 @@
                 color: var(--main-text-color);
             }
         }
-    }
-
-    .delete-ws-btn-wrapper {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-top: 10px;
     }
 }

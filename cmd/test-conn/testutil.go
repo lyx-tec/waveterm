@@ -159,7 +159,7 @@ func testShellWithCommand(connName string, cmd string, timeout time.Duration) er
 	log.Printf("✓ Connected! Starting shell...")
 
 	termSize := waveobj.TermSize{Rows: 24, Cols: 80}
-	shellProc, err := shellexec.StartRemoteShellProcNoWsh(ctx, termSize, "", shellexec.CommandOptsType{}, conn)
+	shellProc, err := shellexec.StartRemoteShellProcNoWsh(ctx, termSize, "", shellexec.CommandOptsType{}, conn, shellutil.ShellType_unknown)
 	if err != nil {
 		return fmt.Errorf("failed to start shell: %w", err)
 	}
@@ -287,7 +287,7 @@ func testInteractiveShell(connName string, timeout time.Duration) error {
 	log.Printf("Type commands and press Enter. Type 'exit' to quit.\n")
 
 	termSize := waveobj.TermSize{Rows: 24, Cols: 80}
-	shellProc, err := shellexec.StartRemoteShellProcNoWsh(ctx, termSize, "", shellexec.CommandOptsType{}, conn)
+	shellProc, err := shellexec.StartRemoteShellProcNoWsh(ctx, termSize, "", shellexec.CommandOptsType{}, conn, shellutil.ShellType_unknown)
 	if err != nil {
 		return fmt.Errorf("failed to start shell: %w", err)
 	}

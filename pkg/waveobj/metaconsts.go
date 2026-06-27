@@ -11,6 +11,7 @@ const (
 	MetaKey_Controller                       = "controller"
 
 	MetaKey_File                             = "file"
+	MetaKey_FileCwd                          = "file:cwd"
 
 	MetaKey_Url                              = "url"
 
