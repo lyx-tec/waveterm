@@ -1,0 +1,31 @@
+pkg/waveobj/metaconsts.go
+  s_df6fdba063b6f6::t_952a9d66f8beee 14
+pkg/waveobj/wtypemeta.go
+  s_df6fdba063b6f6::t_b68070e4aed01f 65,108-109
+  s_df6fdba063b6f6::t_f0fe7c5e619930 18
+frontend/app/view/preview/preview-model.tsx
+  s_df6fdba063b6f6::t_f0fe7c5e619930 385-392,394,425-427
+frontend/types/gotypes.d.ts
+  s_df6fdba063b6f6::t_f13fe91f6bef2a 1146
+frontend/app/store/global.ts
+  s_df6fdba063b6f6::t_f0fe7c5e619930 385
+pkg/wcore/workspace.go
+  s_df6fdba063b6f6::t_f0fe7c5e619930 337-338
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "7fb9ff0dc8d32cd841919b0888007f775ce41198",
+  "prompts": {},
+  "logical_commit_id": "7fb9ff0dc8d32cd841919b0888007f775ce41198",
+  "sessions": {
+    "s_df6fdba063b6f6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f046c-e6aa-77a0-87cd-8a4e6db90895",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}
