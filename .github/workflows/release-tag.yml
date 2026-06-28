@@ -33,8 +33,7 @@ jobs:
                   sudo apt-get install --no-install-recommends -y libarchive-tools libopenjp2-tools rpm squashfs-tools
                   sudo snap install snapcraft --classic --channel=7.x
                   sudo snap install lxd
-                  sudo adduser $USER lxd
-                  sg lxd -c "sudo lxd init --auto"
+                  sudo lxd init --auto || true
                   sudo snap refresh
 
             - name: Install Zig
@@ -82,7 +81,13 @@ jobs:
                   version: 3.x
                   repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Build
+            - name: Build (Linux ARM)
+              if: matrix.runner == 'ubuntu-24.04-arm'
+              run: task package -- --linux deb rpm zip AppImage pacman
+              env:
+                  USE_SYSTEM_FPM: true
+            - name: Build (Others)
+              if: matrix.runner != 'ubuntu-24.04-arm'
               run: task package
               env:
                   USE_SYSTEM_FPM: true
@@ -94,6 +99,7 @@ jobs:
                   path: make
 
     create-release:
+        if: always()
         runs-on: ubuntu-latest
         needs: build
         permissions:
