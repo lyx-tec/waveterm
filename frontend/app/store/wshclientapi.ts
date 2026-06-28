@@ -924,6 +924,12 @@ export class RpcApiType {
         return client.wshRpcCall("setsecrets", data, opts);
     }
 
+    // command "setterminalsize" [call]
+    SetTerminalSizeCommand(client: WshClient, data: CommandSetTerminalSizeData, opts?: RpcOpts): Promise<void> {
+        if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setterminalsize", data, opts);
+        return client.wshRpcCall("setterminalsize", data, opts);
+    }
+
     // command "setvar" [call]
     SetVarCommand(client: WshClient, data: CommandVarData, opts?: RpcOpts): Promise<void> {
         if (this.mockClient) return this.mockClient.mockWshRpcCall(client, "setvar", data, opts);

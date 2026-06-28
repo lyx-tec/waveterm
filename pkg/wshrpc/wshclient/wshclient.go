@@ -920,6 +920,12 @@ func SetSecretsCommand(w *wshutil.WshRpc, data map[string]*string, opts *wshrpc.
 	return err
 }
 
+// command "setterminalsize", wshserver.SetTerminalSizeCommand
+func SetTerminalSizeCommand(w *wshutil.WshRpc, data wshrpc.CommandSetTerminalSizeData, opts *wshrpc.RpcOpts) error {
+	_, err := sendRpcRequestCallHelper[any](w, "setterminalsize", data, opts)
+	return err
+}
+
 // command "setvar", wshserver.SetVarCommand
 func SetVarCommand(w *wshutil.WshRpc, data wshrpc.CommandVarData, opts *wshrpc.RpcOpts) error {
 	_, err := sendRpcRequestCallHelper[any](w, "setvar", data, opts)

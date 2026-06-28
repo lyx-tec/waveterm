@@ -53,6 +53,7 @@ type WshRpcInterface interface {
 	ControllerInputCommand(ctx context.Context, data CommandBlockInputData) error
 	ControllerDestroyCommand(ctx context.Context, blockId string) error
 	ControllerResyncCommand(ctx context.Context, data CommandControllerResyncData) error
+	SetTerminalSizeCommand(ctx context.Context, data CommandSetTerminalSizeData) error
 	ControllerAppendOutputCommand(ctx context.Context, data CommandControllerAppendOutputData) error
 	ResolveIdsCommand(ctx context.Context, data CommandResolveIdsData) (CommandResolveIdsRtnData, error)
 	CreateBlockCommand(ctx context.Context, data CommandCreateBlockData) (waveobj.ORef, error)
@@ -313,6 +314,11 @@ type CommandControllerResyncData struct {
 	TabId        string               `json:"tabid"`
 	BlockId      string               `json:"blockid"`
 	RtOpts       *waveobj.RuntimeOpts `json:"rtopts,omitempty"`
+}
+
+type CommandSetTerminalSizeData struct {
+	BlockId  string           `json:"blockid"`
+	TermSize waveobj.TermSize `json:"termsize"`
 }
 
 type CommandControllerAppendOutputData struct {

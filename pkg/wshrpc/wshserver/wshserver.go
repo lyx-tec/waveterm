@@ -348,10 +348,20 @@ func (ws *WshServer) ControllerResyncCommand(ctx context.Context, data wshrpc.Co
 	return blockcontroller.ResyncController(ctx, data.TabId, data.BlockId, data.RtOpts, data.ForceRestart)
 }
 
+func (ws *WshServer) SetTerminalSizeCommand(ctx context.Context, data wshrpc.CommandSetTerminalSizeData) error {
+	blockcontroller.SetTerminalSize(data.BlockId, data.TermSize)
+	return nil
+}
+
 func (ws *WshServer) ControllerInputCommand(ctx context.Context, data wshrpc.CommandBlockInputData) error {
+	if data.TermSize != nil {
+		blockcontroller.SetTerminalSize(data.BlockId, *data.TermSize)
+	}
+	if len(data.InputData64) == 0 && data.SigName == "" {
+		return nil
+	}
 	inputUnion := &blockcontroller.BlockInputUnion{
-		SigName:  data.SigName,
-		TermSize: data.TermSize,
+		SigName: data.SigName,
 	}
 	if len(data.InputData64) > 0 {
 		inputBuf := make([]byte, base64.StdEncoding.DecodedLen(len(data.InputData64)))
