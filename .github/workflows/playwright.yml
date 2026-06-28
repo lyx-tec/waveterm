@@ -29,6 +29,8 @@ jobs:
 
       - name: Build app
         run: task package -- --win --x64 --config.win.target=zip
+        env:
+          NPM_CONFIG_IGNORE_SCRIPTS: true
 
       - name: Run E2E tests
         run: npx playwright test
