@@ -25,10 +25,12 @@ jobs:
         uses: arduino/setup-task@v2
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v1
+        uses: mlugg/setup-zig@v2
 
       - name: Build app
         run: task package -- --win --x64 --config.win.target=zip
+        env:
+          NPM_CONFIG_IGNORE_SCRIPTS: true
 
       - name: Run E2E tests
         run: npx playwright test
