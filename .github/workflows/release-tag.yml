@@ -1,5 +1,4 @@
 name: Release (Tag Triggered)
-run-name: Build ${{ github.ref_name }}
 on:
     push:
         tags:
@@ -44,7 +43,7 @@ jobs:
               if: matrix.platform != 'windows'
               run: sudo gem install fpm
 
-            - name: Install FPM
+            - name: Install FPM (Windows)
               if: matrix.platform == 'windows'
               run: gem install fpm
 
@@ -81,11 +80,10 @@ jobs:
                   version: 3.x
                   repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Build (${{ matrix.platform }})
+            - name: Build
               run: task package
               env:
                   USE_SYSTEM_FPM: true
-              shell: ${{ matrix.platform == 'windows' && 'powershell' || 'bash' }}
 
             - name: Upload artifacts
               uses: actions/upload-artifact@v5
