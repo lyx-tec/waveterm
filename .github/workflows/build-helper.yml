@@ -38,7 +38,7 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install --no-install-recommends -y libarchive-tools libopenjp2-tools rpm squashfs-tools
-                  sudo snap install snapcraft --classic
+                  sudo snap install snapcraft --classic --channel=7.x
                   sudo snap install lxd
                   sudo lxd init --auto
                   sudo snap refresh
