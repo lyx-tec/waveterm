@@ -1,0 +1,39 @@
+pkg/wcore/workspace.go
+  s_13dabc73c77cb9::t_c900ac876b9e32 520-532
+  s_13dabc73c77cb9::t_e8456f0dcb7370 265-268
+  s_13dabc73c77cb9::t_f32b5f40a6fdcd 533-534
+pkg/blockcontroller/sessiondaemoncontroller.go
+  s_13dabc73c77cb9::t_878c9a0506779a 251-261,270
+  s_13dabc73c77cb9::t_c305464d93a25f 138-142
+pkg/wshrpc/wshrpctypes.go
+  s_13dabc73c77cb9::t_3747f13bcdb3fc 954
+pkg/blockcontroller/shellcontroller.go
+  s_13dabc73c77cb9::t_5053c09a4223b9 33
+  s_13dabc73c77cb9::t_a3eada72cc53ae 412-416
+pkg/wcore/layout.go
+  s_13dabc73c77cb9::t_66b22427ca7fd5 177-182
+frontend/types/gotypes.d.ts
+  s_13dabc73c77cb9::t_f5604cc8bffc7f 659
+frontend/app/block/session-daemon-hooks.ts
+  s_13dabc73c77cb9::t_6f0d41167c0f93 5
+  s_13dabc73c77cb9::t_e36a59ba40b4d2 179-180
+pkg/wshrpc/wshserver/wshserver_session.go
+  s_13dabc73c77cb9::t_c6664f4bbeaf0e 24-29,38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "ad0295767e4e158858f49dddba19cfd148309c4c",
+  "prompts": {},
+  "logical_commit_id": "1e99eeab0e01ec293da371f1500ab20700b93d91",
+  "sessions": {
+    "s_13dabc73c77cb9": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0ef244da0ffePJGN98bP0f6nPu",
+        "model": "deepseek-v4-pro"
+      },
+      "human_author": null
+    }
+  }
+}
