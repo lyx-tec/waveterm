@@ -1,0 +1,25 @@
+frontend/app/view/term/fitaddon.ts
+  s_d7578b359c7ea9::t_410400e71e046d 98-100
+frontend/app/view/term/term.tsx
+  s_d7578b359c7ea9::t_80e17062412fbf 342-343,345-347
+  s_d7578b359c7ea9::t_e106f87d6b6a6a 340,344,354
+frontend/app/view/term/termwrap.ts
+  s_d7578b359c7ea9::t_14af0a3115b931 504
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "94089fb90369648f80414a2f1a9da84afaf9019a",
+  "prompts": {},
+  "logical_commit_id": "94089fb90369648f80414a2f1a9da84afaf9019a",
+  "sessions": {
+    "s_d7578b359c7ea9": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0ed6cb9a0ffejGromdCHwKqRml",
+        "model": "deepseek-v4-pro"
+      },
+      "human_author": null
+    }
+  }
+}
