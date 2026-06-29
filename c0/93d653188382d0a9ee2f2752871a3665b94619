@@ -1,0 +1,40 @@
+frontend/app/view/term/term.tsx
+  s_d2bfa20ef9457a::t_a228c63f9adbe9 340
+frontend/app/view/term/fitaddon.ts
+  s_d7578b359c7ea9::t_cd220a3192f69f 98-100
+frontend/app/view/term/termwrap.ts
+  s_d2bfa20ef9457a::t_ef9aeacdd080f6 708-710,726-728,737-739
+  s_d2bfa20ef9457a::t_2ff5008577fae8 609,616,620,627-630,635
+  s_d7578b359c7ea9::t_ba1266d093e339 505
+  s_d2bfa20ef9457a::t_3d83845d2c8e9f 47,309,600-608,610-612,614-615,617-619,621-626,631-634,636-666,668-669,703,745
+  s_d7578b359c7ea9::t_d4762dd36b7bc2 598,701
+  s_d2bfa20ef9457a::t_ea6bc8921f907a 734-736,979
+  s_d2bfa20ef9457a::t_44cb9eba82a842 613,977-978,980-981
+  s_d2bfa20ef9457a::t_fcd2479b6bfd9d 667
+  s_d2bfa20ef9457a::t_32267e5a3a5a88 729
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "c093d653188382d0a9ee2f2752871a3665b94619",
+  "prompts": {},
+  "logical_commit_id": "c093d653188382d0a9ee2f2752871a3665b94619",
+  "sessions": {
+    "s_d2bfa20ef9457a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f13c0-4535-74a0-b781-ea513ce5297b",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    },
+    "s_d7578b359c7ea9": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0ed6cb9a0ffejGromdCHwKqRml",
+        "model": "deepseek-v4-pro"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}
