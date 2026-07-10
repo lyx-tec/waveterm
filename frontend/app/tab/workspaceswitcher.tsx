@@ -10,6 +10,7 @@ import {
     ExpandableMenuItemRightElement,
 } from "@/element/expandablemenu";
 import { Popover, PopoverButton, PopoverContent } from "@/element/popover";
+import { termLog } from "@/util/termlog";
 import { fireAndForget, makeIconClass, useAtomValueSafe } from "@/util/util";
 import clsx from "clsx";
 import { atom, PrimitiveAtom, useAtomValue, useSetAtom } from "jotai";
@@ -224,6 +225,7 @@ const WorkspaceSwitcherItem = ({ entryAtom }: { entryAtom: PrimitiveAtom<Workspa
             <ExpandableMenuItem
                 className="workspace-list-item"
                 onClick={() => {
+                    termLog("[workspace]", "switchWorkspace", workspace.oid, workspace.name);
                     env.electron.switchWorkspace(workspace.oid);
                     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
                 }}

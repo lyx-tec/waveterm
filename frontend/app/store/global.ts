@@ -17,6 +17,7 @@ import {
 import { getWebServerEndpoint } from "@/util/endpoints";
 import { fetch } from "@/util/fetchutil";
 import { setPlatform } from "@/util/platformutil";
+import { termLog } from "@/util/termlog";
 import {
     base64ToString,
     deepCompareReturnPrev,
@@ -511,6 +512,7 @@ async function fetchWaveFile(
 }
 
 function setNodeFocus(nodeId: string) {
+    termLog("[block]", "setNodeFocus", nodeId);
     const layoutModel = getLayoutModelForStaticTab();
     layoutModel.focusNode(nodeId);
 }
@@ -613,6 +615,7 @@ function refocusNode(blockId: string) {
             return;
         }
     }
+    termLog("[block]", "refocusNode", blockId);
     const layoutModel = getLayoutModelForStaticTab();
     const layoutNodeId = layoutModel.getNodeByBlockId(blockId);
     if (layoutNodeId?.id == null) {
@@ -693,10 +696,12 @@ function getConnStatusAtom(conn: string): PrimitiveAtom<ConnStatus> {
 }
 
 function createTab() {
+    termLog("[tab]", "createTab");
     getApi().createTab();
 }
 
 function setActiveTab(tabId: string) {
+    termLog("[tab]", "setActiveTab", tabId);
     getApi().setActiveTab(tabId);
 }
 

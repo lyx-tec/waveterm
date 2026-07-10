@@ -5,6 +5,7 @@ import { FocusManager } from "@/app/store/focusManager";
 import { getSettingsKeyAtom } from "@/app/store/global";
 import { BlockService } from "@/app/store/services";
 import * as WOS from "@/app/store/wos";
+import { termLog } from "@/util/termlog";
 import { atomWithThrottle, boundNumber, fireAndForget } from "@/util/util";
 import { Atom, atom, Getter, PrimitiveAtom, Setter } from "jotai";
 import { splitAtom } from "jotai/utils";
@@ -1116,10 +1117,13 @@ export class LayoutModel {
      */
     switchNodeFocusInDirection(direction: NavigateDirection, inWaveAI: boolean): NavigationResult {
         const curNodeId = this.focusedNodeId;
+        termLog("[block]", "switchNodeFocusInDirection", direction, "curNode:", curNodeId);
 
         // If no node is focused, set focus to the first leaf.
         if (!curNodeId) {
-            this.focusNode(this.getter(this.leafOrder)[0].nodeid);
+            const firstNodeId = this.getter(this.leafOrder)[0].nodeid;
+            termLog("[block]", "switchNodeFocusInDirection: no focused node, focusing first", firstNodeId);
+            this.focusNode(firstNodeId);
             return { success: true };
         }
 
@@ -1220,6 +1224,7 @@ export class LayoutModel {
             return;
         }
         const leaf = leafOrder[newLeafIdx];
+        termLog("[block]", "switchNodeFocusByBlockNum", newBlockNum, "->", leaf.nodeid);
         this.focusNode(leaf.nodeid);
     }
 
@@ -1229,13 +1234,14 @@ export class LayoutModel {
      */
     focusNode(nodeId: string) {
         if (this.focusedNodeId === nodeId) return;
+        termLog("[block]", "focusNode", nodeId);
         let layoutNode = findNode(this.treeState?.rootNode, nodeId);
         if (!layoutNode) {
             const ephemeralNode = this.getter(this.ephemeralNode);
             if (ephemeralNode?.id === nodeId) {
                 layoutNode = ephemeralNode;
             } else {
-                console.error("unable to focus node, cannot find it in tree", nodeId);
+                termLog("[block]", "focusNode error: cannot find node in tree", nodeId);
                 return;
             }
         }

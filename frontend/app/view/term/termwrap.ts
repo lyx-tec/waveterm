@@ -27,9 +27,9 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Subscription } from "rxjs";
 import * as TermTypes from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
-import debug from "debug";
 import * as jotai from "jotai";
 import { debounce } from "throttle-debounce";
+import { termLog } from "@/util/termlog";
 import {
     handleOsc16162Command,
     handleOsc52Command,
@@ -46,23 +46,11 @@ import {
     trimTerminalSelection,
 } from "./termutil";
 
-const dlog = debug("wave:termwrap");
-
 const TermFileName = "term";
 const TermCacheFileName = "cache:term:full";
 const MinDataProcessedForCache = 100 * 1024;
 export const SupportsImageInput = true;
 const MaxRepaintTransactionMs = 2000;
-const AltScreenEnterSeq = "\x1b[?1049h";
-const AltScreenExitSeq = "\x1b[?1049l";
-const AppCursorKeysEnterSeq = "\x1b[?1h";
-const AppCursorKeysExitSeq = "\x1b[?1l";
-const CursorShowSeq = "\x1b[?25h";
-const ClearScreenSeq = "\x1b[2J";
-const HomeAndClearScreenSeq = "\x1b[H\x1b[2J";
-const MousePrivateModeRe = /\x1b\[\?([0-9;]+)([hl])/g;
-const MouseTrackingModes = new Set(["9", "1000", "1002", "1003"]);
-const MouseModeParams = new Set([...MouseTrackingModes, "1005", "1006", "1015"]);
 
 // detect webgl support
 function detectWebGLSupport(): boolean {
@@ -85,174 +73,7 @@ type TermWrapOptions = {
     nodeModel?: BlockNodeModel;
 };
 
-type MouseRestoreState = {
-    activeParams: Set<string>;
-};
 
-type MouseRestoreData = {
-    data: string | Uint8Array;
-    mouseState: MouseRestoreState;
-};
-
-function hasMouseTrackingMode(mouseState: MouseRestoreState): boolean {
-    for (const param of mouseState.activeParams) {
-        if (MouseTrackingModes.has(param)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function makeMouseRestoreSeq(mouseState: MouseRestoreState): string | null {
-    if (!hasMouseTrackingMode(mouseState)) {
-        return null;
-    }
-    return `\x1b[?${Array.from(mouseState.activeParams).join(";")}h`;
-}
-
-function processMouseRestoreParams(mouseState: MouseRestoreState, params: string[], final: string): void {
-    for (const param of params) {
-        if (!MouseModeParams.has(param)) {
-            continue;
-        }
-        if (final === "h") {
-            if (MouseTrackingModes.has(param)) {
-                for (const trackingParam of MouseTrackingModes) {
-                    mouseState.activeParams.delete(trackingParam);
-                }
-            }
-            mouseState.activeParams.add(param);
-            continue;
-        }
-        mouseState.activeParams.delete(param);
-    }
-}
-
-function prepareMouseRestoreData(data: string | Uint8Array, mouseState: MouseRestoreState): MouseRestoreData {
-    const dataStr = data instanceof Uint8Array ? new TextDecoder().decode(data) : data;
-    let changed = false;
-    // Mouse modes change how user input is encoded, so restore records them
-    // separately and only reapplies them when the final buffer is still alternate.
-    const restoreData = dataStr.replace(MousePrivateModeRe, (seq, rawParams: string, final: string) => {
-        const params = rawParams.split(";");
-        const mouseParams = params.filter((param) => MouseModeParams.has(param));
-        if (mouseParams.length === 0) {
-            return seq;
-        }
-        processMouseRestoreParams(mouseState, mouseParams, final);
-        changed = true;
-        const remainingParams = params.filter((param) => !MouseModeParams.has(param));
-        if (remainingParams.length === 0) {
-            return "";
-        }
-        return `\x1b[?${remainingParams.join(";")}${final}`;
-    });
-    if (!changed) {
-        return { data, mouseState };
-    }
-    if (data instanceof Uint8Array) {
-        return { data: new TextEncoder().encode(restoreData), mouseState };
-    }
-    return { data: restoreData, mouseState };
-}
-
-// Some remote full-screen programs clear the main screen without emitting
-// smcup/rmcup. Keep that temporary drawing in xterm's alternate buffer.
-class SyntheticAltScreenTracker {
-    pendingEnter: boolean = false;
-    active: boolean = false;
-    pendingExit: boolean = false;
-
-    process(data: string): string | null {
-        let changed = false;
-        let rtn = "";
-
-        for (let idx = 0; idx < data.length; ) {
-            const handledSeq = this.matchAndAppendSeq(data, idx);
-            if (handledSeq != null) {
-                rtn += handledSeq.data;
-                idx += handledSeq.seqLen;
-                changed ||= handledSeq.changed;
-                continue;
-            }
-            rtn += data[idx];
-            idx++;
-        }
-
-        const exitSeq = this.flushPendingExit();
-        if (exitSeq != null) {
-            rtn += exitSeq;
-            changed = true;
-        }
-        return changed ? rtn : null;
-    }
-
-    matchAndAppendSeq(data: string, idx: number): { data: string; seqLen: number; changed: boolean } | null {
-        if (data.startsWith(AltScreenEnterSeq, idx)) {
-            this.reset();
-            return { data: AltScreenEnterSeq, seqLen: AltScreenEnterSeq.length, changed: false };
-        }
-        if (data.startsWith(AltScreenExitSeq, idx)) {
-            this.reset();
-            return { data: AltScreenExitSeq, seqLen: AltScreenExitSeq.length, changed: false };
-        }
-        if (data.startsWith(AppCursorKeysEnterSeq, idx)) {
-            if (!this.active) {
-                this.pendingEnter = true;
-            }
-            return { data: AppCursorKeysEnterSeq, seqLen: AppCursorKeysEnterSeq.length, changed: false };
-        }
-        if (data.startsWith(AppCursorKeysExitSeq, idx)) {
-            let changed = false;
-            if (this.active) {
-                this.pendingExit = true;
-                changed = true;
-            }
-            this.pendingEnter = false;
-            return { data: AppCursorKeysExitSeq, seqLen: AppCursorKeysExitSeq.length, changed };
-        }
-        if (data.startsWith(CursorShowSeq, idx)) {
-            const exitSeq = this.flushPendingExit();
-            return {
-                data: exitSeq == null ? CursorShowSeq : CursorShowSeq + exitSeq,
-                seqLen: CursorShowSeq.length,
-                changed: exitSeq != null,
-            };
-        }
-        if (data.startsWith(HomeAndClearScreenSeq, idx)) {
-            return this.maybeEnterAltScreen(HomeAndClearScreenSeq);
-        }
-        if (data.startsWith(ClearScreenSeq, idx)) {
-            return this.maybeEnterAltScreen(ClearScreenSeq);
-        }
-        return null;
-    }
-
-    maybeEnterAltScreen(seq: string): { data: string; seqLen: number; changed: boolean } {
-        if (!this.pendingEnter || this.active) {
-            return { data: seq, seqLen: seq.length, changed: false };
-        }
-        this.active = true;
-        this.pendingEnter = false;
-        this.pendingExit = false;
-        return { data: AltScreenEnterSeq + seq, seqLen: seq.length, changed: true };
-    }
-
-    flushPendingExit(): string | null {
-        if (!this.pendingExit) {
-            return null;
-        }
-        this.active = false;
-        this.pendingExit = false;
-        return AltScreenExitSeq;
-    }
-
-    reset() {
-        this.pendingEnter = false;
-        this.active = false;
-        this.pendingExit = false;
-    }
-}
 
 export class TermWrap {
     tabId: string;
@@ -304,7 +125,6 @@ export class TermWrap {
     lastMode2026ResetTs: number = 0;
     inSyncTransaction: boolean = false;
     inRepaintTransaction: boolean = false;
-    syntheticAltScreenTracker: SyntheticAltScreenTracker = new SyntheticAltScreenTracker();
     suppressTerminalData: boolean = false;
 
     constructor(
@@ -469,6 +289,9 @@ export class TermWrap {
         this.heldData = [];
         this.handleResize_debounced = debounce(50, this.handleResize.bind(this));
         this.terminal.open(this.connectElem);
+        const initRect = this.connectElem.getBoundingClientRect();
+        termLog("[init]", this.blockId, "terminal.open done, size:", `${this.terminal.rows}x${this.terminal.cols}`,
+            "containerRect:", `${initRect.width.toFixed(0)}x${initRect.height.toFixed(0)}`);
 
         const dragoverHandler = (e: DragEvent) => {
             e.preventDefault();
@@ -519,6 +342,9 @@ export class TermWrap {
         if (!zoneId || this.zoneId === zoneId) {
             return;
         }
+        termLog("[zone]", this.blockId, "switchZone:", this.zoneId, "->", zoneId,
+            "zoneLoadVersion:", this.zoneLoadVersion,
+            "termSize:", `${this.terminal.cols}x${this.terminal.rows}`);
         this._mainFileSub?.unsubscribe();
         this._mainFileSub = null;
         this.mainFileSubject?.release();
@@ -528,20 +354,25 @@ export class TermWrap {
         this.ptyOffset = 0;
         this.dataBytesProcessed = 0;
         this.heldData = [];
-        this.syntheticAltScreenTracker.reset();
         this.terminal.reset();
         this.mainFileSubject = getFileSubject(this.getZoneId(), TermFileName);
         this._mainFileSub = this.mainFileSubject.subscribe(this.handleNewFileSubjectData.bind(this));
         await this.loadInitialTerminalData();
+        await this.syncControllerTermSize();
         this.terminal.scrollToBottom();
+        termLog("[zone]", this.blockId, "switchZone done, zone:", this.getZoneId(),
+            "termSize:", `${this.terminal.cols}x${this.terminal.rows}`);
     }
 
     async attachToDaemon(jobId: string): Promise<void> {
+        termLog("[zone]", this.blockId, "attachToDaemon:", jobId,
+            "termSize:", `${this.terminal.cols}x${this.terminal.rows}`);
         await this.switchZone(jobId);
-        await this.syncControllerTermSize();
+        termLog("[zone]", this.blockId, "attachToDaemon: done");
     }
 
     async detachFromDaemon(): Promise<void> {
+        termLog("[zone]", this.blockId, "detachFromDaemon");
         await this.switchZone(this.blockId);
     }
 
@@ -597,6 +428,7 @@ export class TermWrap {
     }
 
     async initTerminal() {
+        const initStartTs = Date.now();
         const copyOnSelectAtom = getSettingsKeyAtom("term:copyonselect");
         const trimTrailingWhitespaceAtom = getSettingsKeyAtom("term:trimtrailingwhitespace");
         this.toDispose.push(this.terminal.onData(this.handleTermData.bind(this)));
@@ -652,8 +484,13 @@ export class TermWrap {
 
         try {
             await this.loadInitialTerminalData();
+            await this.syncControllerTermSize();
         } finally {
             this.loaded = true;
+            termLog("[init]", this.blockId, "initTerminal complete",
+                `${Date.now() - initStartTs}ms`,
+                "zone:", this.getZoneId(),
+                "termSize:", `${this.terminal.cols}x${this.terminal.rows}`);
         }
         this.runProcessIdleTimeout();
     }
@@ -688,6 +525,16 @@ export class TermWrap {
             return;
         }
 
+        if (data === "\x1b[I" || data === "\x1b[O") {
+            termLog("[focus]", this.blockId, "focus event to pty:", data === "\x1b[I" ? "FOCUS_IN" : "FOCUS_OUT");
+        }
+
+        const sgrMouseRe = /^\x1b\[<\d+;\d+;\d+[Mm]$/;
+        if (sgrMouseRe.test(data)) {
+            if (this.terminal.buffer.active.type !== "alternate") {
+                return;
+            }
+        }
         this.sendDataHandler?.(data);
         this.multiInputCallback?.(data);
     }
@@ -720,7 +567,6 @@ export class TermWrap {
         dataBytesProcessed?: number
     ): Promise<void> {
         const rawDataLen = dataBytesProcessed ?? data.length;
-        const writeData = setPtyOffset == null ? this.maybeAddSyntheticAltScreen(data) : data;
         if (isDev() && this.loaded) {
             const dataStr = data instanceof Uint8Array ? new TextDecoder().decode(data) : data;
             this.recentWrites.push({ idx: this.recentWritesCounter++, ts: Date.now(), data: dataStr });
@@ -739,7 +585,7 @@ export class TermWrap {
         if (suppressTerminalData) {
             this.suppressTerminalData = true;
         }
-        this.terminal.write(writeData, () => {
+        this.terminal.write(data, () => {
             try {
                 if (setPtyOffset != null) {
                     this.ptyOffset = setPtyOffset;
@@ -758,24 +604,11 @@ export class TermWrap {
         return prtn;
     }
 
-    maybeAddSyntheticAltScreen(data: string | Uint8Array): string | Uint8Array {
-        const dataStr = data instanceof Uint8Array ? new TextDecoder().decode(data) : data;
-        const syntheticData = this.syntheticAltScreenTracker.process(dataStr);
-        if (syntheticData == null) {
-            return data;
-        }
-        if (data instanceof Uint8Array) {
-            return new TextEncoder().encode(syntheticData);
-        }
-        return syntheticData;
-    }
-
     async loadInitialTerminalData(): Promise<void> {
         const startTs = Date.now();
         const zoneId = this.getZoneId();
         const zoneLoadVersion = this.zoneLoadVersion;
         const { data: cacheData, fileInfo: cacheFile } = await fetchWaveFile(zoneId, TermCacheFileName);
-        const mouseRestoreState: MouseRestoreState = { activeParams: new Set() };
         let ptyOffset = 0;
         if (zoneId !== this.getZoneId() || zoneLoadVersion !== this.zoneLoadVersion) {
             return;
@@ -790,12 +623,12 @@ export class TermWrap {
                     fileTermSize != null &&
                     (fileTermSize.rows != curTermSize.rows || fileTermSize.cols != curTermSize.cols)
                 ) {
-                    console.log("terminal restore size mismatch, temp resize", fileTermSize, curTermSize);
+                    termLog("[init]", this.blockId, "terminal restore size mismatch, temp resize",
+                        `${fileTermSize.cols}x${fileTermSize.rows}`, "->", `${curTermSize.cols}x${curTermSize.rows}`);
                     this.terminal.resize(fileTermSize.cols, fileTermSize.rows);
                     didResize = true;
                 }
-                const restoreData = prepareMouseRestoreData(cacheData, mouseRestoreState);
-                await this.doTerminalWrite(restoreData.data, ptyOffset, true, cacheData.length);
+                await this.doTerminalWrite(cacheData, ptyOffset, true, cacheData.length);
                 if (didResize) {
                     this.terminal.resize(curTermSize.cols, curTermSize.rows);
                 }
@@ -805,18 +638,15 @@ export class TermWrap {
         if (zoneId !== this.getZoneId() || zoneLoadVersion !== this.zoneLoadVersion) {
             return;
         }
-        console.log(
-            `terminal loaded cachefile:${cacheData?.byteLength ?? 0} main:${mainData?.byteLength ?? 0} bytes, ${Date.now() - startTs}ms`
-        );
+        termLog("[init]", this.blockId,
+            `loaded cache:${cacheData?.byteLength ?? 0} main:${mainData?.byteLength ?? 0} bytes, ${Date.now() - startTs}ms`);
         if (mainFile != null) {
-            const restoreData = prepareMouseRestoreData(mainData, mouseRestoreState);
-            await this.doTerminalWrite(restoreData.data, null, true, mainData.length);
+            await this.doTerminalWrite(mainData, null, true, mainData.length);
         }
-        await this.restoreMouseTrackingMode(mouseRestoreState);
     }
 
     async resyncController(reason: string) {
-        console.log("[termwrap] resync controller", this.blockId, reason);
+        termLog("[resync]", this.blockId, reason, `${this.terminal.cols}x${this.terminal.rows}`);
         const rtOpts: RuntimeOpts = { termsize: { rows: this.terminal.rows, cols: this.terminal.cols } };
         try {
             await RpcApi.ControllerResyncCommand(TabRpcClient, {
@@ -825,7 +655,7 @@ export class TermWrap {
                 rtopts: rtOpts,
             });
         } catch (e) {
-            console.log(`error controller resync (${reason})`, this.blockId, e);
+            termLog("[resync]", this.blockId, "error", reason, e);
         }
     }
 
@@ -845,13 +675,15 @@ export class TermWrap {
 
     async syncControllerTermSize() {
         if (!this.shouldSyncControllerTermSize()) {
+            termLog("[resize]", this.blockId, "syncControllerTermSize skipped (shouldSyncControllerTermSize=false)");
             return;
         }
         const termSize: TermSize = { rows: this.terminal.rows, cols: this.terminal.cols };
+        termLog("[resize]", this.blockId, "syncControllerTermSize", `${termSize.cols}x${termSize.rows}`);
         try {
             await RpcApi.SetTerminalSizeCommand(TabRpcClient, { blockid: this.blockId, termsize: termSize });
         } catch (e) {
-            console.log("error syncing terminal size", this.blockId, e);
+            termLog("[resize]", this.blockId, "error syncing terminal size", e);
         }
     }
 
@@ -861,8 +693,7 @@ export class TermWrap {
         this.fitAddon.fit();
         const didResize = oldRows !== this.terminal.rows || oldCols !== this.terminal.cols;
         if (didResize) {
-            console.log(
-                "[termwrap] resize",
+            termLog("[fit]", this.blockId,
                 `${oldRows}x${oldCols}`,
                 "->",
                 `${this.terminal.rows}x${this.terminal.cols}`
@@ -876,28 +707,14 @@ export class TermWrap {
         await this.syncControllerTermSize();
     }
 
-    async restoreMouseTrackingMode(mouseState: MouseRestoreState) {
-        // TODO: This intentionally avoids restoring mouse input in the main buffer.
-        // A main-buffer TUI such as tmux could need it; use stronger foreground
-        // process/session state if we need to distinguish that from a shell prompt.
-        if (this.terminal.buffer.active.type !== "alternate") {
-            return;
-        }
-        const restoreSeq = makeMouseRestoreSeq(mouseState);
-        if (restoreSeq == null) {
-            return;
-        }
-        await this.doTerminalWrite(restoreSeq, this.ptyOffset, true);
-    }
-
     handleResize() {
         const oldRows = this.terminal.rows;
         const oldCols = this.terminal.cols;
         const didResize = this.fitTerminalToContainer();
         if (didResize) {
+            termLog("[resize]", this.blockId, "handleResize:", `${oldRows}x${oldCols}`, "->", `${this.terminal.rows}x${this.terminal.cols}`);
             fireAndForget(() => this.syncControllerTermSize());
         }
-        dlog("resize", `${this.terminal.rows}x${this.terminal.cols}`, `${oldRows}x${oldCols}`, this.hasResized);
         if (!this.hasResized) {
             this.hasResized = true;
             this.resyncController("initial resize");
@@ -910,7 +727,10 @@ export class TermWrap {
         }
         const serializedOutput = this.serializeAddon.serialize();
         const termSize: TermSize = { rows: this.terminal.rows, cols: this.terminal.cols };
-        console.log("idle timeout term", this.dataBytesProcessed, serializedOutput.length, termSize);
+        termLog("[cache]", this.blockId, "idle timeout",
+            "dataBytesProcessed:", this.dataBytesProcessed,
+            "serialized:", serializedOutput.length,
+            "termSize:", `${termSize.cols}x${termSize.rows}`);
         fireAndForget(() =>
             services.BlockService.SaveTerminalState(this.getZoneId(), serializedOutput, "full", this.ptyOffset, termSize)
         );
