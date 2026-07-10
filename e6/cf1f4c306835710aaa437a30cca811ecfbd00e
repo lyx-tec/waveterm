@@ -1,0 +1,78 @@
+frontend/layout/lib/layoutModel.ts
+  s_1d3b53b380ad97::t_bbc77518f4fa0f 1237,1244
+  s_1d3b53b380ad97::t_16f601ffc6a050 8
+  s_1d3b53b380ad97::t_b8b9cbd2f7b5e1 1120,1124-1126
+  s_1d3b53b380ad97::t_f32619b0e85f6f 1227
+frontend/app/store/tabrpcclient.ts
+  s_1d3b53b380ad97::t_619081b9f31de8 97
+  s_1d3b53b380ad97::t_5e30b36bf5b6da 9
+frontend/app/view/term/termwrap.ts
+  s_1d3b53b380ad97::t_99e01b9c141288 588
+  s_1d3b53b380ad97::t_0e2604b7cc700b 626-627,631,641-642,644
+  s_1d3b53b380ad97::t_1078ff17b020b3 649,658
+  s_1d3b53b380ad97::t_d8f846bec7bdb4 678,682,686
+  s_1d3b53b380ad97::t_856e8a78522402 487,490-493
+  s_1d3b53b380ad97::t_606ce186d15660 696
+  s_1d3b53b380ad97::t_5bb680fa26c28a 715
+  s_1d3b53b380ad97::t_22677af325d5ee 730-733
+  s_1d3b53b380ad97::t_8c7006d20d39a8 431
+  s_1d3b53b380ad97::t_9f7457d58360cc 526,528-529,531-537
+  s_1d3b53b380ad97::t_d19e549383306d 32
+  s_1d3b53b380ad97::t_d647805a4f1127 292-294
+  s_1d3b53b380ad97::t_4a711015ac9895 345-347,361,363-364,368-369,371,375
+  s_1d3b53b380ad97::t_70ce5b8275664c 530
+frontend/app/view/term/term-model.ts
+  s_1d3b53b380ad97::t_d6244d7ce1cbac 512
+  s_1d3b53b380ad97::t_2cdc33cac8d066 13
+  s_1d3b53b380ad97::t_49093236f56363 514
+  s_1d3b53b380ad97::t_9dff97aa42b6a9 513
+frontend/app/store/global.ts
+  s_1d3b53b380ad97::t_740688891b585e 618
+  s_1d3b53b380ad97::t_d85d77aedb0bac 699,704
+  s_1d3b53b380ad97::t_175365dae0ef3d 515
+  s_1d3b53b380ad97::t_8e1b940631a2c0 20
+frontend/app/tab/workspaceswitcher.tsx
+  s_1d3b53b380ad97::t_21ff4ce98a53cc 228
+  s_1d3b53b380ad97::t_9994a64e084574 13
+frontend/app/view/term/term.tsx
+  s_1d3b53b380ad97::t_cea7b488655316 339-345
+  s_1d3b53b380ad97::t_c7824664580b40 55,63,67
+  s_1d3b53b380ad97::t_9b5e0434bafb9c 17
+  s_1d3b53b380ad97::t_c361ed8bc9e9ad 303-308,312
+frontend/app/store/keymodel.ts
+  s_1d3b53b380ad97::t_6d3577822d5680 234
+  s_1d3b53b380ad97::t_6362fa7f697d4a 28
+  s_1d3b53b380ad97::t_b3f25b2bfbaa20 300
+  s_1d3b53b380ad97::t_265618c6673b5d 337,345
+  s_1d3b53b380ad97::t_1a04dfc9311928 288
+  s_1d3b53b380ad97::t_5f68905f800a7d 145
+  s_1d3b53b380ad97::t_572b2166e2192e 246
+frontend/app/block/blockframe-header.tsx
+  s_1d3b53b380ad97::t_ca4d6e32f7835c 280-282
+frontend/app/app.tsx
+  s_1d3b53b380ad97::t_0d8f5be3b251fd 23
+  s_1d3b53b380ad97::t_f49653e9375d7e 249,254,258
+frontend/app/block/block.tsx
+  s_1d3b53b380ad97::t_83060d975b42e1 20
+  s_1d3b53b380ad97::t_ffb48d09fedad0 169,171
+frontend/app/store/focusManager.ts
+  s_1d3b53b380ad97::t_214148aba1da9e 10
+  s_1d3b53b380ad97::t_b487772ad52854 63,73,87,92,103,113-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "e6cf1f4c306835710aaa437a30cca811ecfbd00e",
+  "prompts": {},
+  "logical_commit_id": "e6cf1f4c306835710aaa437a30cca811ecfbd00e",
+  "sessions": {
+    "s_1d3b53b380ad97": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0da7692dbffe87WzEUb4BGTtFB",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}
