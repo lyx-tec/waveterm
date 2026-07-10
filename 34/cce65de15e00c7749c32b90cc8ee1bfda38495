@@ -1,0 +1,25 @@
+emain/emain-tabview.ts
+  s_1d3b53b380ad97::t_02d515befbfe60 237
+  s_1d3b53b380ad97::t_c72bb2c3e83b78 271-274,277-279
+  s_1d3b53b380ad97::t_edfc177c262fa2 310
+emain/emain-window.ts
+  s_1d3b53b380ad97::t_4f70077c87fb70 609-612,615
+  s_1d3b53b380ad97::t_fe52cedeebad1a 608,613-614,616
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "34cce65de15e00c7749c32b90cc8ee1bfda38495",
+  "prompts": {},
+  "logical_commit_id": "34cce65de15e00c7749c32b90cc8ee1bfda38495",
+  "sessions": {
+    "s_1d3b53b380ad97": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0da7692dbffe87WzEUb4BGTtFB",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}
