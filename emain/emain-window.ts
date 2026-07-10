@@ -605,9 +605,15 @@ export class WaveBrowserWindow extends BaseWindow {
                         if (!newWs) {
                             return;
                         }
-                        console.log("processActionQueue switchworkspace newWs", newWs);
-                        this.removeAllChildViews();
-                        console.log("destroyed all tabs", this.waveWindowId);
+                        console.log("processActionQueue switchworkspace newWs", newWs, "keep-alive tabs:", this.allLoadedTabViews.size);
+                        // Keep BrowserViews alive (don't destroy) — position off-screen instead.
+                        // They stay in contentView and wcvCache, and will be positioned on-screen
+                        // when switching back to this workspace (setTabViewIntoWindow → finalizePositioning).
+                        const curBounds = this.getContentBounds();
+                        for (const tabView of this.allLoadedTabViews.values()) {
+                            tabView.isActiveTab = false;
+                            tabView.positionTabOffScreen(curBounds);
+                        }
                         this.workspaceId = entry.workspaceId;
                         this.allLoadedTabViews = new Map();
                         tabId = newWs.activetabid;
