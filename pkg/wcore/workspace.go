@@ -33,6 +33,9 @@ var WorkspaceColors = [...]string{
 	"#FFE900", // Yellow
 }
 
+const MaxWorkspaces = 10
+const MaxTabsPerWorkspace = 10
+
 var WorkspaceIcons = [...]string{
 	"custom@wave-logo-solid",
 	"triangle",
@@ -51,6 +54,13 @@ var WorkspaceIcons = [...]string{
 }
 
 func CreateWorkspace(ctx context.Context, name string, icon string, color string, applyDefaults bool, isInitialLaunch bool) (*waveobj.Workspace, error) {
+	workspaces, err := wstore.DBGetAllObjsByType[*waveobj.Workspace](ctx, waveobj.OType_Workspace)
+	if err != nil {
+		return nil, fmt.Errorf("error checking workspace count: %w", err)
+	}
+	if len(workspaces) >= MaxWorkspaces {
+		return nil, fmt.Errorf("cannot create workspace: maximum of %d workspaces reached", MaxWorkspaces)
+	}
 	ws := &waveobj.Workspace{
 		OID:    uuid.NewString(),
 		TabIds: []string{},
@@ -58,7 +68,7 @@ func CreateWorkspace(ctx context.Context, name string, icon string, color string
 		Icon:   "",
 		Color:  "",
 	}
-	err := wstore.DBInsert(ctx, ws)
+	err = wstore.DBInsert(ctx, ws)
 	if err != nil {
 		return nil, fmt.Errorf("error inserting workspace: %w", err)
 	}
@@ -280,6 +290,9 @@ func createTabObj(ctx context.Context, workspaceId string, name string, meta wav
 	ws, err := GetWorkspace(ctx, workspaceId)
 	if err != nil {
 		return nil, fmt.Errorf("workspace %s not found: %w", workspaceId, err)
+	}
+	if len(ws.TabIds) >= MaxTabsPerWorkspace {
+		return nil, fmt.Errorf("cannot create tab: maximum of %d tabs per workspace reached", MaxTabsPerWorkspace)
 	}
 	layoutStateId := uuid.NewString()
 	tab := &waveobj.Tab{
