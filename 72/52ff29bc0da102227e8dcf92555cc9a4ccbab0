@@ -1,0 +1,24 @@
+pkg/wcore/workspace.go
+  s_c2aa0c2ea28336::t_5611287b96a3a9 294-295
+  s_c2aa0c2ea28336::t_fb3ba45a8a0645 57-63,293
+  s_c2aa0c2ea28336::t_5850e9e56ac20b 71
+  s_c2aa0c2ea28336::t_bdb2aee4e20f42 36-38
+  s_c2aa0c2ea28336::t_bf15a82e7d922c 296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "7252ff29bc0da102227e8dcf92555cc9a4ccbab0",
+  "prompts": {},
+  "logical_commit_id": "7252ff29bc0da102227e8dcf92555cc9a4ccbab0",
+  "sessions": {
+    "s_c2aa0c2ea28336": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0b36cfcb7ffereCc0SC8kSXj6g",
+        "model": "hy3-free"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>"
+    }
+  }
+}
