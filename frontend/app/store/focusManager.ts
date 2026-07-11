@@ -7,6 +7,7 @@ import { getBlockComponentModel, getBlockMetaKeyAtom } from "@/app/store/global"
 import { globalStore } from "@/app/store/jotaiStore";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
+import { termLog } from "@/util/termlog";
 import { fireAndForget } from "@/util/util";
 import { getLayoutModelForStaticTab } from "@/layout/index";
 import { focusedBlockId } from "@/util/focusutil";
@@ -59,6 +60,7 @@ export class FocusManager {
         if (!force && isAlreadyFocused) {
             return;
         }
+        termLog("[focus]", "setWaveAIFocused");
         globalStore.set(this.focusType, "waveai");
         this.refocusNode();
     }
@@ -68,6 +70,7 @@ export class FocusManager {
         if (!force && ftype == "node") {
             return;
         }
+        termLog("[focus]", "setBlockFocus");
         globalStore.set(this.focusType, "node");
         this.refocusNode();
     }
@@ -81,10 +84,12 @@ export class FocusManager {
     }
 
     requestNodeFocus(): void {
+        termLog("[focus]", "requestNodeFocus");
         globalStore.set(this.focusType, "node");
     }
 
     requestWaveAIFocus(): void {
+        termLog("[focus]", "requestWaveAIFocus");
         globalStore.set(this.focusType, "waveai");
     }
 
@@ -95,6 +100,7 @@ export class FocusManager {
     refocusNode() {
         const ftype = globalStore.get(this.focusType);
         if (ftype == "waveai") {
+            termLog("[focus]", "refocusNode: waveai");
             WaveAIModel.getInstance().focusInput();
             return;
         }
@@ -103,8 +109,9 @@ export class FocusManager {
         if (lnode == null || lnode.data?.blockId == null) {
             return;
         }
-        layoutModel.focusNode(lnode.id);
         const blockId = lnode.data.blockId;
+        termLog("[focus]", "refocusNode", blockId);
+        layoutModel.focusNode(lnode.id);
         const bcm = getBlockComponentModel(blockId);
         const ok = bcm?.viewModel?.giveFocus?.();
         if (!ok) {

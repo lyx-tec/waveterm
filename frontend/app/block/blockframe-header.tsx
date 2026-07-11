@@ -277,6 +277,9 @@ const BlockFrame_Header = ({
                 </div>
             )}
             <HeaderTextElems viewModel={viewModel} blockId={nodeModel.blockId} preview={preview} error={error} />
+            <div className="text-[10px] font-mono text-muted opacity-50 shrink-0 mr-1 select-none" title={nodeModel.blockId}>
+                {nodeModel.blockId.substring(0, 8)}
+            </div>
             <HeaderEndIcons viewModel={viewModel} nodeModel={nodeModel} blockId={nodeModel.blockId} />
         </div>
     );

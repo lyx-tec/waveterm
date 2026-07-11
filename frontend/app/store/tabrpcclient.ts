@@ -6,6 +6,7 @@ import { getApi, getBlockComponentModel, getConnStatusAtom, globalStore, WOS } f
 import type { TermViewModel } from "@/app/view/term/term-model";
 import { WorkspaceLayoutModel } from "@/app/workspace/workspace-layout-model";
 import { getLayoutModelForStaticTab } from "@/layout/index";
+import { termLog } from "@/util/termlog";
 import { base64ToArrayBuffer } from "@/util/util";
 import { RpcResponseHelper, WshClient } from "./wshclient";
 import { RpcApi } from "./wshclientapi";
@@ -93,6 +94,7 @@ export class TabClient extends WshClient {
     }
 
     async handle_setblockfocus(rh: RpcResponseHelper, blockId: string): Promise<void> {
+        termLog("[block]", "handle_setblockfocus (RPC)", blockId);
         const layoutModel = getLayoutModelForStaticTab();
         if (!layoutModel) {
             throw new Error("Layout model not found");

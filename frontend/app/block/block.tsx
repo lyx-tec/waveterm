@@ -17,6 +17,7 @@ import { counterInc } from "@/store/counters";
 import { getBlockComponentModel, registerBlockComponentModel, unregisterBlockComponentModel } from "@/store/global";
 import { makeORef } from "@/store/wos";
 import { focusedBlockId, getElemAsStr } from "@/util/focusutil";
+import { termLog } from "@/util/termlog";
 import { isBlank, useAtomValueSafe } from "@/util/util";
 import clsx from "clsx";
 import { useAtomValue } from "jotai";
@@ -165,9 +166,9 @@ const BlockFull = memo(({ nodeModel, viewModel }: FullBlockProps) => {
 
     const handleChildFocus = useCallback(
         (event: React.FocusEvent<HTMLDivElement, Element>) => {
-            console.log("setFocusedChild", nodeModel.blockId, getElemAsStr(event.target));
+            termLog("[block]", "handleChildFocus", nodeModel.blockId, getElemAsStr(event.target));
             if (!isFocused) {
-                console.log("focusedChild focus", nodeModel.blockId);
+                termLog("[block]", "handleChildFocus: set isFocused", nodeModel.blockId);
                 nodeModel.focusNode();
             }
         },

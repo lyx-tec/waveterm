@@ -14,6 +14,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import type { TermViewModel } from "@/app/view/term/term-model";
 import { atoms, getOverrideConfigAtom, getSettingsPrefixAtom, WOS } from "@/store/global";
+import { termLog } from "@/util/termlog";
 import { fireAndForget, useAtomValueSafe } from "@/util/util";
 import { computeBgStyleFromMeta } from "@/util/waveutil";
 import { ISearchOptions } from "@xterm/addon-search";
@@ -51,7 +52,7 @@ const TermResyncHandler = React.memo(({ blockId, model }: TerminalViewProps) => 
 
     React.useEffect(() => {
         if (!model.termRef.current?.hasResized) {
-            console.log("[TermResyncHandler] hasResized=false, skipping resync", blockId);
+            termLog("[resync]", blockId, "TermResyncHandler skipped (hasResized=false)");
             setLastConnStatus(connStatus);
             return;
         }
@@ -59,11 +60,11 @@ const TermResyncHandler = React.memo(({ blockId, model }: TerminalViewProps) => 
         const wasConnected = lastConnStatus?.status == "connected";
         const curConnName = connStatus?.connection;
         const lastConnName = lastConnStatus?.connection;
-        console.log("[TermResyncHandler] check", blockId, "cur:", connStatus?.status, "last:", lastConnStatus?.status, "conn:", curConnName);
+        termLog("[resync]", blockId, "check cur:", connStatus?.status, "last:", lastConnStatus?.status, "conn:", curConnName);
         if (isConnected == wasConnected && curConnName == lastConnName) {
             return;
         }
-        console.log("[TermResyncHandler] triggering resync", blockId);
+        termLog("[resync]", blockId, "triggered (conn status changed)");
         model.termRef.current?.resyncController("resync handler");
         setLastConnStatus(connStatus);
     }, [connStatus]);
@@ -299,10 +300,16 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         const termCursorStyle = normalizeCursorStyle(globalStore.get(getOverrideConfigAtom(blockId, "term:cursor")));
         const termCursorBlink = globalStore.get(getOverrideConfigAtom(blockId, "term:cursorblink")) ?? false;
         const wasFocused = model.termRef.current != null && globalStore.get(model.nodeModel.isFocused);
+        const connectElem = connectElemRef.current;
+        const createRect = connectElem?.getBoundingClientRect?.();
+        termLog("[init]", blockId, "creating TermWrap, containerRect:",
+            createRect ? `${createRect.width.toFixed(0)}x${createRect.height.toFixed(0)}` : "null",
+            "parentRect:", connectElem?.parentElement?.getBoundingClientRect?.() ?
+                `${connectElem.parentElement.getBoundingClientRect().width.toFixed(0)}x${connectElem.parentElement.getBoundingClientRect().height.toFixed(0)}` : "null");
         const termWrap = new TermWrap(
             tabModel.tabId,
             blockId,
-            connectElemRef.current,
+            connectElem,
             {
                 theme: termTheme,
                 fontSize: termFontSize,
@@ -329,7 +336,13 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
         (window as any).term = termWrap;
         model.termRef.current = termWrap;
         setTermWrapInst(termWrap);
-        const rszObs = new ResizeObserver(() => {
+        const rszObs = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            const cr = entry?.contentRect;
+            if (cr) {
+                termLog("[resize]", blockId, "ResizeObserver fired, contentRect:",
+                    `${cr.width.toFixed(0)}x${cr.height.toFixed(0)}`);
+            }
             termWrap.handleResize_debounced();
         });
         rszObs.observe(connectElemRef.current);

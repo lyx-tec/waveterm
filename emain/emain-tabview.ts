@@ -234,7 +234,7 @@ export class WaveTabView extends WebContentsView {
     }
 }
 
-let MaxCacheSize = 10;
+let MaxCacheSize = 30;
 const wcvCache = new Map<string, WaveTabView>();
 
 export function setMaxTabCacheSize(size: number) {
@@ -268,11 +268,15 @@ function tryEvictEntry(waveTabId: string): boolean {
         console.log("[error] WaveWindow not found for WaveTabView", tabView.waveTabId);
         tabView.destroy();
         return true;
-    } else {
-        // will trigger a destroy on the tabview
-        ww.removeTabView(tabView.waveTabId, false);
+    }
+    if (!ww.allLoadedTabViews.has(tabView.waveTabId)) {
+        // tab is no longer tracked by its window (e.g. after workspace switch cleared allLoadedTabViews)
+        tabView.destroy();
         return true;
     }
+    // will trigger a destroy on the tabview
+    ww.removeTabView(tabView.waveTabId, false);
+    return true;
 }
 
 function checkAndEvictCache(): void {
@@ -303,7 +307,7 @@ export function clearTabCache() {
 // returns [tabview, initialized]
 export async function getOrCreateWebViewForTab(waveWindowId: string, tabId: string): Promise<[WaveTabView, boolean]> {
     let tabView = getWaveTabView(tabId);
-    if (tabView) {
+    if (tabView && !tabView.isDestroyed) {
         return [tabView, true];
     }
     const fullConfig = await RpcApi.GetFullConfigCommand(ElectronWshClient);

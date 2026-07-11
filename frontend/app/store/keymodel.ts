@@ -25,6 +25,7 @@ import { WorkspaceLayoutModel } from "@/app/workspace/workspace-layout-model";
 import { deleteLayoutModelForTab, getLayoutModelForStaticTab, NavigateDirection } from "@/layout/index";
 import * as keyutil from "@/util/keyutil";
 import { isWindows } from "@/util/platformutil";
+import { termLog } from "@/util/termlog";
 import { CHORD_TIMEOUT } from "@/util/sharedconst";
 import { fireAndForget } from "@/util/util";
 import * as jotai from "jotai";
@@ -141,7 +142,7 @@ function simpleCloseStaticTab() {
             }
         })
         .catch((e) => {
-            console.log("error closing tab", e);
+            termLog("[tab]", "error closing tab", e);
         });
 }
 
@@ -230,6 +231,7 @@ function genericClose() {
 }
 
 function switchBlockByBlockNum(index: number) {
+    termLog("[block]", "switchBlockByBlockNum", index);
     const layoutModel = getLayoutModelForStaticTab();
     if (!layoutModel) {
         return;
@@ -241,6 +243,7 @@ function switchBlockByBlockNum(index: number) {
 }
 
 function switchBlockInDirection(direction: NavigateDirection) {
+    termLog("[block]", "switchBlockInDirection", direction);
     const layoutModel = getLayoutModelForStaticTab();
     const focusType = FocusManager.getInstance().getFocusType();
 
@@ -282,7 +285,7 @@ function getAllTabs(ws: Workspace): string[] {
 }
 
 function switchTabAbs(index: number) {
-    console.log("switchTabAbs", index);
+    termLog("[tab]", "switchTabAbs", index);
     const ws = globalStore.get(atoms.workspace);
     const newTabIdx = index - 1;
     const tabids = getAllTabs(ws);
@@ -294,7 +297,7 @@ function switchTabAbs(index: number) {
 }
 
 function switchTab(offset: number) {
-    console.log("switchTab", offset);
+    termLog("[tab]", "switchTab", offset);
     const ws = globalStore.get(atoms.workspace);
     const curTabId = globalStore.get(atoms.staticTabId);
     let tabIdx = -1;
@@ -331,7 +334,7 @@ function globalRefocus() {
     const layoutModel = getLayoutModelForStaticTab();
     const focusedNode = globalStore.get(layoutModel.focusedNode);
     if (focusedNode == null) {
-        // focus a node
+        termLog("[block]", "globalRefocus: no focused node, focus first");
         layoutModel.focusFirstNode();
         return;
     }
@@ -339,6 +342,7 @@ function globalRefocus() {
     if (blockId == null) {
         return;
     }
+    termLog("[block]", "globalRefocus", blockId);
     refocusNode(blockId);
 }
 

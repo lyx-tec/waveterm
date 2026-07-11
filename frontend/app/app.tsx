@@ -20,6 +20,7 @@ import { ContextMenuModel } from "@/store/contextmenu";
 import { atoms, createBlock, getSettingsPrefixAtom, refocusNode } from "@/store/global";
 import { appHandleKeyDown, keyboardMouseDownHandler } from "@/store/keymodel";
 import { getElemAsStr } from "@/util/focusutil";
+import { termLog } from "@/util/termlog";
 import * as keyutil from "@/util/keyutil";
 import { PLATFORM } from "@/util/platformutil";
 import * as util from "@/util/util";
@@ -245,16 +246,16 @@ const MacOSFirstClickHandler = () => {
                 const blockId = getBlockIdFromTarget(e.target);
                 if (blockId != null) {
                     setTimeout(() => {
-                        console.log("macos first-click, focusing block", blockId);
+                        termLog("[block]", "macos first-click, focusing block", blockId);
                         refocusNode(blockId);
                     }, 10);
                 } else if (isAIPanelTarget(e.target)) {
                     setTimeout(() => {
-                        console.log("macos first-click, focusing AI panel");
+                        termLog("[focus]", "macos first-click, focusing AI panel");
                         FocusManager.getInstance().setWaveAIFocused(true);
                     }, 10);
                 }
-                console.log("macos first-click detected, canceled", timeDiff + "ms");
+                termLog("[block]", "macos first-click detected, canceled", timeDiff + "ms");
                 return;
             }
             cancelNextClick = false;
