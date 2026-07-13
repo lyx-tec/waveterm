@@ -1,0 +1,27 @@
+pkg/wcore/workspace.go
+  s_d3b40209f9e0fe::t_96e2217aa71292 275-281
+  s_d3b40209f9e0fe::t_7149e58ebc763a 350-354,360
+package.json
+  s_d3b40209f9e0fe::t_a4ede1ca6d99dc 10
+pkg/wcore/layout.go
+  s_d3b40209f9e0fe::t_16e75695b77365 177-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "dd10c94ff5da19e4376e6d00dabfe3d00afb193d",
+  "prompts": {},
+  "logical_commit_id": "dd10c94ff5da19e4376e6d00dabfe3d00afb193d",
+  "sessions": {
+    "s_d3b40209f9e0fe": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0ae50356effevik8Ju3v3UxZmo",
+        "model": "hy3-free"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>",
+      "total_additions": 73,
+      "total_deletions": 53
+    }
+  }
+}
