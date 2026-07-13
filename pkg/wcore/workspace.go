@@ -272,6 +272,13 @@ func CreateTab(ctx context.Context, workspaceId string, tabName string, activate
 		if err != nil {
 			return tab.OID, fmt.Errorf("error applying new tab layout: %w", err)
 		}
+		// ApplyPortableLayout creates the blocks and updates the tab's BlockIds in the
+		// database, but the in-memory `tab` variable is not refreshed. Re-fetch the tab so
+		// that applyWorkspaceDefaultsToBlocks iterates over the actual created blocks.
+		tab, err = wstore.DBGet[*waveobj.Tab](ctx, tab.OID)
+		if err != nil {
+			return tab.OID, fmt.Errorf("error reloading tab: %w", err)
+		}
 		applyWorkspaceDefaultsToBlocks(ctx, workspaceId, tab)
 		tabBg := getTabBackground()
 		if tabBg != "" {
@@ -340,13 +347,17 @@ func applyWorkspaceDefaultsToBlocks(ctx context.Context, workspaceId string, tab
 				updated = true
 			}
 		}
-		if ws.DefaultCwd != "" && isTerm {
+		// Only apply the workspace default cwd when the block's effective connection
+		// matches the workspace default connection. A block already on a different
+		// connection must keep its own cwd (or the remote home directory).
+		blockConn, _ := meta[waveobj.MetaKey_Connection].(string)
+		if ws.DefaultCwd != "" && isTerm && blockConn == ws.DefaultConnName {
 			if _, exists := meta[waveobj.MetaKey_CmdCwd]; !exists {
 				meta[waveobj.MetaKey_CmdCwd] = ws.DefaultCwd
 				updated = true
 			}
 		}
-		if ws.DefaultCwd != "" && isFileBrowser {
+		if ws.DefaultCwd != "" && isFileBrowser && blockConn == ws.DefaultConnName {
 			meta[waveobj.MetaKey_File] = ""
 			meta[waveobj.MetaKey_FileCwd] = ws.DefaultCwd
 			updated = true

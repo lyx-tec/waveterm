@@ -174,5 +174,13 @@ func BootstrapStarterLayout(ctx context.Context) error {
 		return fmt.Errorf("error applying starter layout: %w", err)
 	}
 
+	// Apply the workspace's default connection/cwd to the freshly created blocks.
+	// Re-fetch the tab since ApplyPortableLayout updates BlockIds in the database only.
+	starterTab, err := wstore.DBGet[*waveobj.Tab](ctx, tabId)
+	if err != nil {
+		return fmt.Errorf("error reloading starter tab: %w", err)
+	}
+	applyWorkspaceDefaultsToBlocks(ctx, workspace.OID, starterTab)
+
 	return nil
 }
