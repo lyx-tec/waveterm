@@ -1,0 +1,55 @@
+frontend/preview/mock/mockwaveenv.ts
+  s_8a21e6e2b8c694::t_cbace0e3635e14 157-158
+emain/emain-window.ts
+  s_8a21e6e2b8c694::t_6a9a483269f1bd 609
+  s_bbe1254c940b64::t_71f28a8c89c644 496
+frontend/types/custom.d.ts
+  s_8a21e6e2b8c694::t_9646fd5bf53441 21
+  s_8a21e6e2b8c694::t_bbbdf8b33ec197 14
+frontend/app/store/global-atoms.ts
+  s_8a21e6e2b8c694::t_0e0433bb13bf9f 18
+  s_8a21e6e2b8c694::t_cbc23e17dd3796 19,23
+  s_8a21e6e2b8c694::t_6a3b8712d4a6a6 47
+emain/emain-tabview.ts
+  s_bbe1254c940b64::t_5c8c2912060ccc 310
+  s_8a21e6e2b8c694::t_bc7ca4ea6515f0 349
+frontend/app/app.tsx
+  s_8a21e6e2b8c694::t_38471eed3dd1d0 46-53,60-64
+frontend/wave.ts
+  s_8a21e6e2b8c694::t_0548db946d0fd3 120-122,124-125,133-134,155-162
+  s_8a21e6e2b8c694::t_26915788683ee8 123,205
+  s_bbe1254c940b64::t_1b082f83877d45 98
+  s_8a21e6e2b8c694::t_36b530e1833f2d 130,151,206
+  s_8a21e6e2b8c694::t_576fc1f0867e43 42,137,143-144,147-148,207
+  s_8a21e6e2b8c694::t_405ec76a196fb4 84-85
+  s_bbe1254c940b64::t_7bc0ccf39ff66a 116-118,126-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "32889844080654fb3ac515e8b9a6c77af9ae181d",
+  "prompts": {},
+  "logical_commit_id": "32889844080654fb3ac515e8b9a6c77af9ae181d",
+  "sessions": {
+    "s_8a21e6e2b8c694": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6327-18c6-7170-957d-885ec9ab534a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>",
+      "total_additions": 139,
+      "total_deletions": 193
+    },
+    "s_bbe1254c940b64": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0a55421dbffeyHw9EyBRj5RQH4",
+        "model": "hy3-free"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>",
+      "total_additions": 111,
+      "total_deletions": 33
+    }
+  }
+}
