@@ -12,14 +12,15 @@ const ConnStatusMapAtom = atom(new Map<string, PrimitiveAtom<ConnStatus>>());
 const orefAtomCache = new Map<string, Map<string, Atom<any>>>();
 
 function initGlobalAtoms(initOpts: GlobalInitOptions) {
-    const windowIdAtom = atom(initOpts.windowId) as PrimitiveAtom<string>;
     const builderIdAtom = atom(initOpts.builderId) as PrimitiveAtom<string>;
     const builderAppIdAtom = atom<string>(null) as PrimitiveAtom<string>;
     setWaveWindowType(initOpts.isPreview ? "preview" : initOpts.builderId != null ? "builder" : "tab");
+    // Tab views are reused across workspace switches, so reinit updates this to the workspace active tab.
+    const staticTabIdAtom = atom(initOpts.tabId) as PrimitiveAtom<string>;
     const uiContextAtom = atom((get) => {
         const uiContext: UIContext = {
             windowid: initOpts.windowId,
-            activetabid: initOpts.tabId,
+            activetabid: get(staticTabIdAtom),
         };
         return uiContext;
     }) as Atom<UIContext>;
@@ -43,10 +44,7 @@ function initGlobalAtoms(initOpts: GlobalInitOptions) {
         console.log("failed to initialize zoomFactorAtom", e);
     }
 
-    const workspaceIdAtom: Atom<string> = atom((get) => {
-        const windowData = WOS.getObjectValue<WaveWindow>(WOS.makeORef("window", get(windowIdAtom)), get);
-        return windowData?.workspaceid ?? null;
-    });
+    const workspaceIdAtom = atom<string>(null) as PrimitiveAtom<string>;
     const workspaceAtom: Atom<Workspace> = atom((get) => {
         const workspaceId = get(workspaceIdAtom);
         if (workspaceId == null) {
@@ -75,8 +73,6 @@ function initGlobalAtoms(initOpts: GlobalInitOptions) {
         const fullConfig = get(fullConfigAtom);
         return fullConfig?.configerrors != null && fullConfig.configerrors.length > 0;
     }) as Atom<boolean>;
-    // this is *the* tab that this tabview represents.  it should never change.
-    const staticTabIdAtom: Atom<string> = atom(initOpts.tabId);
     const controlShiftDelayAtom = atom(false);
     const updaterStatusAtom = atom<UpdaterStatus>("up-to-date") as PrimitiveAtom<UpdaterStatus>;
     try {
