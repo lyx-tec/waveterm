@@ -39,6 +39,7 @@ import { createRoot } from "react-dom/client";
 const platform = getApi().getPlatform();
 document.title = `Wave Terminal`;
 let savedInitOpts: WaveInitOpts = null;
+let unsubscribeWorkspace: () => void = null;
 
 (window as any).WOS = WOS;
 (window as any).globalStore = globalStore;
@@ -80,6 +81,8 @@ document.addEventListener("DOMContentLoaded", initBare);
 async function initWaveWrap(initOpts: WaveInitOpts) {
     try {
         if (savedInitOpts) {
+            globalStore.set(activeTabIdAtom, initOpts.tabId);
+            globalStore.set(atoms.staticTabId, initOpts.tabId);
             await reinitWave();
             return;
         }
@@ -92,6 +95,7 @@ async function initWaveWrap(initOpts: WaveInitOpts) {
         document.body.style.visibility = null;
         document.body.style.opacity = null;
         document.body.classList.remove("is-transparent");
+        document.body.classList.remove("init");
     }
 }
 
@@ -109,35 +113,53 @@ async function reinitWave() {
 
     await WOS.reloadWaveObject<Client>(WOS.makeORef("client", savedInitOpts.clientId));
     const waveWindow = await WOS.reloadWaveObject<WaveWindow>(WOS.makeORef("window", savedInitOpts.windowId));
+    if (waveWindow == null) {
+        return;
+    }
     const ws = await WOS.reloadWaveObject<Workspace>(WOS.makeORef("workspace", waveWindow.workspaceid));
-    const initialTab = await WOS.reloadWaveObject<Tab>(WOS.makeORef("tab", savedInitOpts.tabId));
+    if (ws == null) {
+        return;
+    }
+    globalStore.set(atoms.workspaceId, ws.oid);
+    const activeTabId = ws.activetabid || savedInitOpts.tabId;
+    const initialTab = await WOS.reloadWaveObject<Tab>(WOS.makeORef("tab", activeTabId));
+    if (initialTab == null) {
+        return;
+    }
     await WOS.reloadWaveObject<LayoutState>(WOS.makeORef("layout", initialTab.layoutstate));
-    reloadAllWorkspaceTabs(ws);
+    await reloadWorkspaceTabsAndLayouts(ws);
     document.title = `Wave Terminal - ${initialTab.name}`; // TODO update with tab name change
     getApi().setWindowInitStatus("wave-ready");
+    globalStore.set(activeTabIdAtom, activeTabId);
+    globalStore.set(atoms.staticTabId, activeTabId);
     globalStore.set(atoms.reinitVersion, globalStore.get(atoms.reinitVersion) + 1);
     globalStore.set(atoms.updaterStatusAtom, getApi().getUpdaterStatus());
+    subscribeToWorkspace(ws.oid);
     setTimeout(() => {
         globalRefocus();
     }, 50);
 }
 
-function reloadAllWorkspaceTabs(ws: Workspace) {
-    if (ws == null || !ws.tabids?.length) {
+function subscribeToWorkspace(workspaceId: string) {
+    if (workspaceId == null) {
         return;
     }
-    ws.tabids?.forEach((tabid) => {
-        WOS.reloadWaveObject<Tab>(WOS.makeORef("tab", tabid));
-    });
+    unsubscribeWorkspace?.();
+    unsubscribeWorkspace = WOS.wpsSubscribeToObject(WOS.makeORef("workspace", workspaceId));
 }
 
-function loadAllWorkspaceTabs(ws: Workspace) {
+async function reloadWorkspaceTabsAndLayouts(ws: Workspace) {
     if (ws == null || !ws.tabids?.length) {
         return;
     }
-    ws.tabids?.forEach((tabid) => {
-        WOS.getObjectValue<Tab>(WOS.makeORef("tab", tabid));
-    });
+    await Promise.all(
+        ws.tabids.map(async (tabid) => {
+            const tab = await WOS.reloadWaveObject<Tab>(WOS.makeORef("tab", tabid));
+            if (tab?.layoutstate) {
+                await WOS.reloadWaveObject<LayoutState>(WOS.makeORef("layout", tab.layoutstate));
+            }
+        })
+    );
 }
 
 async function initWave(initOpts: WaveInitOpts) {
@@ -180,8 +202,9 @@ async function initWave(initOpts: WaveInitOpts) {
             WOS.loadAndPinWaveObject<Workspace>(WOS.makeORef("workspace", waveWindow.workspaceid)),
             WOS.reloadWaveObject<LayoutState>(WOS.makeORef("layout", initialTab.layoutstate)),
         ]);
-        loadAllWorkspaceTabs(ws);
-        WOS.wpsSubscribeToObject(WOS.makeORef("workspace", waveWindow.workspaceid));
+        globalStore.set(atoms.workspaceId, ws.oid);
+        await reloadWorkspaceTabsAndLayouts(ws);
+        subscribeToWorkspace(ws.oid);
         document.title = `Wave Terminal - ${initialTab.name}`; // TODO update with tab name change
     } catch (e) {
         console.error("Failed initialization error", e);

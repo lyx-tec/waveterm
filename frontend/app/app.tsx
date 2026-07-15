@@ -43,19 +43,25 @@ const dlog = debug("wave:app");
 const focusLog = debug("wave:focus");
 
 const App = ({ onFirstRender }: { onFirstRender: () => void }) => {
+    return (
+        <Provider store={globalStore}>
+            <AppContextProviders onFirstRender={onFirstRender} />
+        </Provider>
+    );
+};
+
+const AppContextProviders = ({ onFirstRender }: { onFirstRender: () => void }) => {
     const tabId = useAtomValue(atoms.staticTabId);
     const waveEnvRef = useRef(makeWaveEnvImpl());
     useEffect(() => {
         onFirstRender();
     }, []);
     return (
-        <Provider store={globalStore}>
-            <WaveEnvContext.Provider value={waveEnvRef.current}>
-                <TabModelContext.Provider value={getTabModelByTabId(tabId)}>
-                    <AppInner />
-                </TabModelContext.Provider>
-            </WaveEnvContext.Provider>
-        </Provider>
+        <WaveEnvContext.Provider value={waveEnvRef.current}>
+            <TabModelContext.Provider value={getTabModelByTabId(tabId)}>
+                <AppInner />
+            </TabModelContext.Provider>
+        </WaveEnvContext.Provider>
     );
 };
 

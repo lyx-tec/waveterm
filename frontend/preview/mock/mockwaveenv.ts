@@ -154,7 +154,8 @@ function makeMockGlobalAtoms(
     }
     const fullConfigAtom = atom(fullConfig) as PrimitiveAtom<FullConfigType>;
     const settingsAtom = atom((get) => get(fullConfigAtom)?.settings ?? {}) as Atom<SettingsType>;
-    const workspaceIdAtom: Atom<string> = atomOverrides?.workspaceId ?? (atom(null as string) as Atom<string>);
+    const workspaceIdAtom: PrimitiveAtom<string> =
+        atomOverrides?.workspaceId ?? (atom(null as string) as PrimitiveAtom<string>);
     const workspaceAtom: Atom<Workspace> = atom((get) => {
         const wsId = get(workspaceIdAtom);
         if (wsId == null) {

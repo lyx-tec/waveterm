@@ -307,7 +307,7 @@ export function clearTabCache() {
 // returns [tabview, initialized]
 export async function getOrCreateWebViewForTab(waveWindowId: string, tabId: string): Promise<[WaveTabView, boolean]> {
     let tabView = getWaveTabView(tabId);
-    if (tabView && !tabView.isDestroyed) {
+    if (tabView && !tabView.isDestroyed && !tabView.webContents?.isDestroyed()) {
         return [tabView, true];
     }
     const fullConfig = await RpcApi.GetFullConfigCommand(ElectronWshClient);
@@ -346,7 +346,7 @@ export async function getOrCreateWebViewForTab(waveWindowId: string, tabId: stri
             }
         }
     });
-    tabView.webContents.setWindowOpenHandler(({ url, frameName }) => {
+    tabView.webContents.setWindowOpenHandler(({ url }) => {
         if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("file://")) {
             console.log("openExternal fallback", url);
             shell.openExternal(url);
