@@ -1,0 +1,34 @@
+frontend/app/store/global-atoms.ts
+  s_4f42beaa8fe6aa::t_3b743531cd1bc8 23
+  s_4f42beaa8fe6aa::t_9b2a3fd877ac14 28-34
+  s_4f42beaa8fe6aa::t_6dc4b5cc718a18 20
+  s_4f42beaa8fe6aa::t_0ede6780dea43f 138-139
+frontend/preview/mock/mockwaveenv.ts
+  s_4f42beaa8fe6aa::t_b6a029897e6a91 177-180
+  s_4f42beaa8fe6aa::t_fb97850aa09564 166-173,181-182
+frontend/wave.ts
+  s_4f42beaa8fe6aa::t_4cbf8aeb63ce9f 151
+frontend/types/custom.d.ts
+  s_4f42beaa8fe6aa::t_0cbaee8b2c213d 14-15
+frontend/app/app.tsx
+  s_4f42beaa8fe6aa::t_68799183be0b9a 367
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "efa033fe643170e8a916b85f68aaef681b70fc48",
+  "prompts": {},
+  "logical_commit_id": "efa033fe643170e8a916b85f68aaef681b70fc48",
+  "sessions": {
+    "s_4f42beaa8fe6aa": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_097ad95a1ffeXsdu9N3nLBf5hT",
+        "model": "deepseek-v4-flash-free"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>",
+      "total_additions": 38,
+      "total_deletions": 34
+    }
+  }
+}
