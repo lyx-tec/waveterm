@@ -364,7 +364,7 @@ const BadgeAutoClearing = () => {
 const AppInner = () => {
     const prefersReducedMotion = useAtomValue(atoms.prefersReducedMotionAtom);
     const client = useAtomValue(ClientModel.getInstance().clientAtom);
-    const windowData = useAtomValue(GlobalModel.getInstance().windowDataAtom);
+    const windowData = useAtomValue(atoms.windowData);
     const isFullScreen = useAtomValue(atoms.isFullScreen);
 
     if (client == null || windowData == null) {

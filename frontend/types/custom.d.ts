@@ -11,6 +11,8 @@ declare global {
         builderId: jotai.Atom<string>; // readonly (for builder mode)
         builderAppId: jotai.PrimitiveAtom<string>; // app being edited in builder mode
         uiContext: jotai.Atom<UIContext>; // driven from windowId, tabId
+        windowId: jotai.PrimitiveAtom<string>; // lifecycle: set by applyWorkspaceContext
+        windowData: jotai.Atom<WaveWindow>; // derived from windowId via WOS
         workspaceId: jotai.PrimitiveAtom<string>;
         workspace: jotai.Atom<Workspace>; // driven from workspaceId via WOS
         fullConfigAtom: jotai.PrimitiveAtom<FullConfigType>; // driven from WOS, settings -- updated via WebSocket
