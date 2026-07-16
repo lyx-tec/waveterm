@@ -1,0 +1,29 @@
+frontend/wave.ts
+  s_e20f823fde8daf::t_e8c10aa4987530 76-81
+  s_e20f823fde8daf::t_d8dbbc52e9daf5 269-278
+  s_e20f823fde8daf::t_502f9b73af650c 42-75,82
+  s_e20f823fde8daf::t_e6ea914b65fcb9 94-154,156
+  s_e20f823fde8daf::t_bd4fbbc65af337 217-222,225-226,228-233
+  s_e20f823fde8daf::t_e25a568a99be8a 155
+  s_e20f823fde8daf::t_8c86e8ae5c994d 83
+  s_e20f823fde8daf::t_6d6098dc46ccfb 93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "533ab4253214d5afa97bae19931361c00db695e9",
+  "prompts": {},
+  "logical_commit_id": "533ab4253214d5afa97bae19931361c00db695e9",
+  "sessions": {
+    "s_e20f823fde8daf": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_09a6f9d1affeu6i5g3QlY2fN97",
+        "model": "deepseek-v4-pro"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>",
+      "total_additions": 201,
+      "total_deletions": 130
+    }
+  }
+}
