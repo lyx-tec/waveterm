@@ -148,6 +148,7 @@ async function loadWorkspaceContext(opts: {
 function applyWorkspaceContext(ctx: WorkspaceContext, opts: { tabContext: "own" | "active" }) {
     const tabIdForRenderer = opts.tabContext === "active" ? ctx.activeTabId : ctx.ownTabId;
 
+    globalStore.set(atoms.windowId, ctx.waveWindow.oid);
     globalStore.set(atoms.workspaceId, ctx.workspace.oid);
     globalStore.set(activeTabIdAtom, ctx.activeTabId);
     globalStore.set(atoms.staticTabId, tabIdForRenderer);

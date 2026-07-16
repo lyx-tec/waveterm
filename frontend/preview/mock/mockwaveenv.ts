@@ -163,10 +163,23 @@ function makeMockGlobalAtoms(
         }
         return get(getWaveObjectAtom<Workspace>("workspace:" + wsId));
     });
+    const windowIdAtomMock = atom(null) as PrimitiveAtom<string>;
+    const windowDataAtomMock: Atom<WaveWindow> = atom((get) => {
+        const windowId = get(windowIdAtomMock);
+        if (windowId == null) {
+            return null;
+        }
+        return get(getWaveObjectAtom<WaveWindow>("window:" + windowId));
+    });
     const defaults: GlobalAtomsType = {
         builderId: atom(""),
         builderAppId: atom("") as any,
-        uiContext: atom({ windowid: "", activetabid: tabId ?? "" } as UIContext),
+        uiContext: atom((get) => ({
+            windowid: get(windowIdAtomMock),
+            activetabid: tabId ?? "",
+        })) as Atom<UIContext>,
+        windowId: windowIdAtomMock,
+        windowData: windowDataAtomMock,
         workspaceId: workspaceIdAtom,
         workspace: workspaceAtom,
         fullConfigAtom,
