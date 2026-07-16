@@ -39,7 +39,47 @@ import { createRoot } from "react-dom/client";
 const platform = getApi().getPlatform();
 document.title = `Wave Terminal`;
 let savedInitOpts: WaveInitOpts = null;
-let unsubscribeWorkspace: () => void = null;
+
+type WorkspaceContext = {
+    ownTabId: string;
+    activeTabId: string;
+    client: Client;
+    waveWindow: WaveWindow;
+    workspace: Workspace;
+    activeTab: Tab;
+    layout: LayoutState;
+    workspaceTabs: Tab[];
+    workspaceLayouts: LayoutState[];
+};
+
+class WorkspaceSubscription {
+    private _unsubscribe: (() => void) | null = null;
+
+    setWorkspace(workspaceId: string) {
+        this._unsubscribe?.();
+        if (workspaceId != null) {
+            this._unsubscribe = WOS.wpsSubscribeToObject(WOS.makeORef("workspace", workspaceId));
+        } else {
+            this._unsubscribe = null;
+        }
+    }
+
+    dispose() {
+        this._unsubscribe?.();
+        this._unsubscribe = null;
+    }
+}
+
+const workspaceSubscription = new WorkspaceSubscription();
+
+function waitForNextPaint(): Promise<void> {
+    return Promise.race([
+        new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }),
+        new Promise<void>((resolve) => setTimeout(resolve, 50)),
+    ]);
+}
 
 (window as any).WOS = WOS;
 (window as any).globalStore = globalStore;
@@ -50,6 +90,69 @@ let unsubscribeWorkspace: () => void = null;
 (window as any).countersClear = countersClear;
 (window as any).getLayoutModelForStaticTab = getLayoutModelForStaticTab;
 (window as any).modalsModel = modalsModel;
+
+async function loadWorkspaceContext(opts: {
+    clientId: string;
+    windowId: string;
+    ownTabId: string;
+}): Promise<WorkspaceContext | null> {
+    const client = await WOS.reloadWaveObject<Client>(WOS.makeORef("client", opts.clientId));
+    if (client == null) {
+        return null;
+    }
+
+    const waveWindow = await WOS.reloadWaveObject<WaveWindow>(WOS.makeORef("window", opts.windowId));
+    if (waveWindow == null) {
+        return null;
+    }
+
+    const workspace = await WOS.reloadWaveObject<Workspace>(WOS.makeORef("workspace", waveWindow.workspaceid));
+    if (workspace == null) {
+        return null;
+    }
+
+    const activeTabId = workspace.activetabid || opts.ownTabId;
+    const activeTab = await WOS.reloadWaveObject<Tab>(WOS.makeORef("tab", activeTabId));
+    if (activeTab == null) {
+        return null;
+    }
+
+    const layout = await WOS.reloadWaveObject<LayoutState>(WOS.makeORef("layout", activeTab.layoutstate));
+    if (layout == null) {
+        return null;
+    }
+
+    const workspaceTabs = await Promise.all(
+        workspace.tabids.map((tabId) => WOS.reloadWaveObject<Tab>(WOS.makeORef("tab", tabId)))
+    );
+
+    const workspaceLayouts = await Promise.all(
+        workspaceTabs
+            .filter((tab) => tab?.layoutstate)
+            .map((tab) => WOS.reloadWaveObject<LayoutState>(WOS.makeORef("layout", tab.layoutstate)))
+    );
+
+    return {
+        ownTabId: opts.ownTabId,
+        activeTabId,
+        client,
+        waveWindow,
+        workspace,
+        activeTab,
+        layout,
+        workspaceTabs,
+        workspaceLayouts,
+    };
+}
+
+function applyWorkspaceContext(ctx: WorkspaceContext, opts: { tabContext: "own" | "active" }) {
+    const tabIdForRenderer = opts.tabContext === "active" ? ctx.activeTabId : ctx.ownTabId;
+
+    globalStore.set(atoms.workspaceId, ctx.workspace.oid);
+    globalStore.set(activeTabIdAtom, ctx.activeTabId);
+    globalStore.set(atoms.staticTabId, tabIdForRenderer);
+    globalStore.set(atoms.updaterStatusAtom, getApi().getUpdaterStatus());
+}
 
 function updateZoomFactor(zoomFactor: number) {
     console.log("update zoomfactor", zoomFactor);
@@ -111,55 +214,26 @@ async function reinitWave() {
         }, 100)
     );
 
-    await WOS.reloadWaveObject<Client>(WOS.makeORef("client", savedInitOpts.clientId));
-    const waveWindow = await WOS.reloadWaveObject<WaveWindow>(WOS.makeORef("window", savedInitOpts.windowId));
-    if (waveWindow == null) {
+    const ctx = await loadWorkspaceContext({
+        clientId: savedInitOpts.clientId,
+        windowId: savedInitOpts.windowId,
+        ownTabId: savedInitOpts.tabId,
+    });
+    if (ctx == null) {
         return;
     }
-    const ws = await WOS.reloadWaveObject<Workspace>(WOS.makeORef("workspace", waveWindow.workspaceid));
-    if (ws == null) {
-        return;
-    }
-    globalStore.set(atoms.workspaceId, ws.oid);
-    const activeTabId = ws.activetabid || savedInitOpts.tabId;
-    const initialTab = await WOS.reloadWaveObject<Tab>(WOS.makeORef("tab", activeTabId));
-    if (initialTab == null) {
-        return;
-    }
-    await WOS.reloadWaveObject<LayoutState>(WOS.makeORef("layout", initialTab.layoutstate));
-    await reloadWorkspaceTabsAndLayouts(ws);
-    document.title = `Wave Terminal - ${initialTab.name}`; // TODO update with tab name change
-    getApi().setWindowInitStatus("wave-ready");
-    globalStore.set(activeTabIdAtom, activeTabId);
-    globalStore.set(atoms.staticTabId, activeTabId);
+
+    applyWorkspaceContext(ctx, { tabContext: "active" });
     globalStore.set(atoms.reinitVersion, globalStore.get(atoms.reinitVersion) + 1);
-    globalStore.set(atoms.updaterStatusAtom, getApi().getUpdaterStatus());
-    subscribeToWorkspace(ws.oid);
+    workspaceSubscription.setWorkspace(ctx.workspace.oid);
+    document.title = `Wave Terminal - ${ctx.activeTab.name}`;
+
+    await waitForNextPaint();
+    getApi().setWindowInitStatus("wave-ready");
+
     setTimeout(() => {
         globalRefocus();
     }, 50);
-}
-
-function subscribeToWorkspace(workspaceId: string) {
-    if (workspaceId == null) {
-        return;
-    }
-    unsubscribeWorkspace?.();
-    unsubscribeWorkspace = WOS.wpsSubscribeToObject(WOS.makeORef("workspace", workspaceId));
-}
-
-async function reloadWorkspaceTabsAndLayouts(ws: Workspace) {
-    if (ws == null || !ws.tabids?.length) {
-        return;
-    }
-    await Promise.all(
-        ws.tabids.map(async (tabid) => {
-            const tab = await WOS.reloadWaveObject<Tab>(WOS.makeORef("tab", tabid));
-            if (tab?.layoutstate) {
-                await WOS.reloadWaveObject<LayoutState>(WOS.makeORef("layout", tab.layoutstate));
-            }
-        })
-    );
 }
 
 async function initWave(initOpts: WaveInitOpts) {
@@ -193,19 +267,16 @@ async function initWave(initOpts: WaveInitOpts) {
             const macOSVersion = await RpcApi.MacOSVersionCommand(TabRpcClient);
             setMacOSVersion(macOSVersion);
         }
-        const [_client, waveWindow, initialTab] = await Promise.all([
-            WOS.loadAndPinWaveObject<Client>(WOS.makeORef("client", initOpts.clientId)),
-            WOS.loadAndPinWaveObject<WaveWindow>(WOS.makeORef("window", initOpts.windowId)),
-            WOS.loadAndPinWaveObject<Tab>(WOS.makeORef("tab", initOpts.tabId)),
-        ]);
-        const [ws, _layoutState] = await Promise.all([
-            WOS.loadAndPinWaveObject<Workspace>(WOS.makeORef("workspace", waveWindow.workspaceid)),
-            WOS.reloadWaveObject<LayoutState>(WOS.makeORef("layout", initialTab.layoutstate)),
-        ]);
-        globalStore.set(atoms.workspaceId, ws.oid);
-        await reloadWorkspaceTabsAndLayouts(ws);
-        subscribeToWorkspace(ws.oid);
-        document.title = `Wave Terminal - ${initialTab.name}`; // TODO update with tab name change
+        const ctx = await loadWorkspaceContext({
+            clientId: initOpts.clientId,
+            windowId: initOpts.windowId,
+            ownTabId: initOpts.tabId,
+        });
+        if (ctx != null) {
+            applyWorkspaceContext(ctx, { tabContext: "own" });
+            workspaceSubscription.setWorkspace(ctx.workspace.oid);
+            document.title = `Wave Terminal - ${ctx.activeTab.name}`;
+        }
     } catch (e) {
         console.error("Failed initialization error", e);
         getApi().sendLog("Error in initialization (wave.ts, loading required objects) " + e.message + "\n" + e.stack);
