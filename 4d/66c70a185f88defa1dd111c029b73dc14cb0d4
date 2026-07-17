@@ -1,0 +1,43 @@
+docs/design/workspace-switch-refactor-plan.md
+  s_8a21e6e2b8c694::t_65a4e55a5b3748 248-257,328-347,349-356,362,378,385-388,390-397,399-405,437-438,446
+  s_8a21e6e2b8c694::t_52ff46e2e78b2c 1-108,111-122,125,130,135,139,141,146,150-160,172-174,182-186,190,193-197,205-233,235,239,241-247,258-327,348,357-361,363-377,379-384,389,398,406-436,439-445,447-455
+  s_8a21e6e2b8c694::t_8e3e790437cc6b 109-110,123-124,126-129,131-134,136-138,140,142-145,147-149,161-171,175-181,187-189,191-192,198-204,234,236-238,240
+  s_8a21e6e2b8c694::t_b7b07a7a0f160c 456
+emain/emain-window.ts
+  s_4f42beaa8fe6aa::t_6477c288071257 576,581,587,592
+  s_4f42beaa8fe6aa::t_77798134b6299c 605,612
+  s_4f42beaa8fe6aa::t_d96f595c0c25c4 498-501
+  s_4f42beaa8fe6aa::t_a94986d64b19de 479-484,506-508,510-512
+  s_4f42beaa8fe6aa::t_396feed113f9b1 568,570-575,577-580,582-586,588-591,593-596,598,650,652,679
+  s_4f42beaa8fe6aa::t_2c0a78deafa109 606,637,645,651,653,658,662-668,673-678
+  s_4f42beaa8fe6aa::t_fe8c99137ebe7a 569
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "4d66c70a185f88defa1dd111c029b73dc14cb0d4",
+  "prompts": {},
+  "logical_commit_id": "4d66c70a185f88defa1dd111c029b73dc14cb0d4",
+  "sessions": {
+    "s_4f42beaa8fe6aa": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_097ad95a1ffeXsdu9N3nLBf5hT",
+        "model": "deepseek-v4-flash-free"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>",
+      "total_additions": 91,
+      "total_deletions": 42
+    },
+    "s_8a21e6e2b8c694": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6327-18c6-7170-957d-885ec9ab534a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>",
+      "total_additions": 471,
+      "total_deletions": 15
+    }
+  }
+}
