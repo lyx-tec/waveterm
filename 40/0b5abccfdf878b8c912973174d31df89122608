@@ -1,0 +1,36 @@
+frontend/preview/mock/tabbar-mock.tsx
+  s_4f42beaa8fe6aa::t_97de4dbde09dae 110,133,144-145,152
+frontend/app/app.tsx
+  s_4f42beaa8fe6aa::t_4241c73e1ad8e7 18,54,310,312
+frontend/app/workspace/workspace-layout-model.ts
+  s_4f42beaa8fe6aa::t_1006b117659684 10,125,416
+frontend/app/store/keymodel.ts
+  s_4f42beaa8fe6aa::t_8e5615191f03eb 25,70-71,125-126,133,135,152,166,168-169,173,193,197,206,208,212,215,219,235,247,302,334,366,401,411,470,562,566,668,723,746,766
+frontend/types/custom.d.ts
+  s_4f42beaa8fe6aa::t_27e5c6b176c37c 23
+frontend/layout/lib/layoutModelHooks.ts
+  s_4f42beaa8fe6aa::t_f1f80e8b30df49 27-28,45-46
+frontend/app/store/global-atoms.ts
+  s_4f42beaa8fe6aa::t_8968b291f4272d 18-19,24,147
+frontend/preview/mock/mockwaveenv.ts
+  s_4f42beaa8fe6aa::t_b8973cf057fbe1 193,439
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "400b5abccfdf878b8c912973174d31df89122608",
+  "prompts": {},
+  "logical_commit_id": "400b5abccfdf878b8c912973174d31df89122608",
+  "sessions": {
+    "s_4f42beaa8fe6aa": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_097ad95a1ffeXsdu9N3nLBf5hT",
+        "model": "deepseek-v4-flash-free"
+      },
+      "human_author": "lyx-tec <lyx.tec@gmail.com>",
+      "total_additions": 58,
+      "total_deletions": 58
+    }
+  }
+}
