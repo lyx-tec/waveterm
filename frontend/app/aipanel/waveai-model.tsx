@@ -181,7 +181,7 @@ export class WaveAIModel {
                 const builderId = globalStore.get(atoms.builderId);
                 orefContext = WOS.makeORef("builder", builderId);
             } else {
-                const tabId = globalStore.get(atoms.staticTabId);
+                const tabId = globalStore.get(atoms.currentTabId);
                 orefContext = WOS.makeORef("tab", tabId);
             }
             WaveAIModel.instance = new WaveAIModel(orefContext, isBuilderWindow());

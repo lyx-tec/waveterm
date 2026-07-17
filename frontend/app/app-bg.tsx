@@ -18,7 +18,7 @@ type AppBgEnv = WaveEnvSubset<{
 
 export function AppBackground() {
     const bgRef = useRef<HTMLDivElement>(null);
-    const tabId = useAtomValue(atoms.staticTabId);
+    const tabId = useAtomValue(atoms.currentTabId);
     const [tabData] = useWaveObjectValue<Tab>(WOS.makeORef("tab", tabId));
     const env = useWaveEnv<AppBgEnv>();
     const tabBg = useAtomValue(env.getTabMetaKeyAtom(tabId, "tab:background"));

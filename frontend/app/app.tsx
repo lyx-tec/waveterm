@@ -15,7 +15,7 @@ import { getTabModelByTabId, TabModelContext } from "@/app/store/tab-model";
 import { WaveEnvContext } from "@/app/waveenv/waveenv";
 import { makeWaveEnvImpl } from "@/app/waveenv/waveenvimpl";
 import { Workspace } from "@/app/workspace/workspace";
-import { getLayoutModelForStaticTab } from "@/layout/index";
+import { getLayoutModelForCurrentTab } from "@/layout/index";
 import { ContextMenuModel } from "@/store/contextmenu";
 import { atoms, createBlock, getSettingsPrefixAtom, refocusNode } from "@/store/global";
 import { appHandleKeyDown, keyboardMouseDownHandler } from "@/store/keymodel";
@@ -51,7 +51,7 @@ const App = ({ onFirstRender }: { onFirstRender: () => void }) => {
 };
 
 const AppContextProviders = ({ onFirstRender }: { onFirstRender: () => void }) => {
-    const tabId = useAtomValue(atoms.staticTabId);
+    const tabId = useAtomValue(atoms.currentTabId);
     const waveEnvRef = useRef(makeWaveEnvImpl());
     useEffect(() => {
         onFirstRender();
@@ -307,9 +307,9 @@ const AppKeyHandlers = () => {
 };
 
 const BadgeAutoClearing = () => {
-    const tabId = useAtomValue(atoms.staticTabId);
+    const tabId = useAtomValue(atoms.currentTabId);
     const documentHasFocus = useAtomValue(atoms.documentHasFocus);
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const focusedNode = useAtomValue(layoutModel.focusedNode);
     const focusedBlockId = focusedNode?.data?.blockId;
     const badge = useAtomValue(getBlockBadgeAtom(focusedBlockId));

@@ -24,8 +24,8 @@ function getLayoutModelForTab(tabAtom: Atom<Tab>): LayoutModel {
     }
     const layoutModel = new LayoutModel(tabAtom, globalStore.get, globalStore.set);
     
-    const staticTabId = globalStore.get(atoms.staticTabId);
-    if (tabId === staticTabId) {
+    const currentTabId = globalStore.get(atoms.currentTabId);
+    if (tabId === currentTabId) {
         const layoutStateAtom = getLayoutStateAtomFromTab(tabAtom, globalStore.get);
         globalStore.sub(layoutStateAtom, () => {
             layoutModel.onBackendUpdate();
@@ -42,8 +42,8 @@ function getLayoutModelForTabById(tabId: string) {
     return getLayoutModelForTab(tabAtom);
 }
 
-export function getLayoutModelForStaticTab() {
-    const tabId = globalStore.get(atoms.staticTabId);
+export function getLayoutModelForCurrentTab() {
+    const tabId = globalStore.get(atoms.currentTabId);
     return getLayoutModelForTabById(tabId);
 }
 

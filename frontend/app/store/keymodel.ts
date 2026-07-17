@@ -22,7 +22,7 @@ import {
 } from "@/app/store/global";
 import { getActiveTabModel } from "@/app/store/tab-model";
 import { WorkspaceLayoutModel } from "@/app/workspace/workspace-layout-model";
-import { deleteLayoutModelForTab, getLayoutModelForStaticTab, NavigateDirection } from "@/layout/index";
+import { deleteLayoutModelForTab, getLayoutModelForCurrentTab, NavigateDirection } from "@/layout/index";
 import * as keyutil from "@/util/keyutil";
 import { isWindows } from "@/util/platformutil";
 import { termLog } from "@/util/termlog";
@@ -67,8 +67,8 @@ export function keyboardMouseDownHandler(e: MouseEvent) {
     }
 }
 
-function getFocusedBlockInStaticTab(): string {
-    const layoutModel = getLayoutModelForStaticTab();
+function getFocusedBlockInCurrentTab(): string {
+    const layoutModel = getLayoutModelForCurrentTab();
     const focusedNode = globalStore.get(layoutModel.focusedNode);
     return focusedNode.data?.blockId;
 }
@@ -122,17 +122,17 @@ function shouldDispatchToBlock(e: WaveKeyboardEvent): boolean {
     return true;
 }
 
-function getStaticTabBlockCount(): number {
-    const tabId = globalStore.get(atoms.staticTabId);
+function getCurrentTabBlockCount(): number {
+    const tabId = globalStore.get(atoms.currentTabId);
     const tabORef = WOS.makeORef("tab", tabId);
     const tabAtom = WOS.getWaveObjectAtom<Tab>(tabORef);
     const tabData = globalStore.get(tabAtom);
     return tabData?.blockids?.length ?? 0;
 }
 
-function simpleCloseStaticTab() {
+function simpleCloseCurrentTab() {
     const workspaceId = globalStore.get(atoms.workspaceId);
-    const tabId = globalStore.get(atoms.staticTabId);
+    const tabId = globalStore.get(atoms.currentTabId);
     const confirmClose = globalStore.get(getSettingsKeyAtom("tab:confirmclose")) ?? false;
     getApi()
         .closeTab(workspaceId, tabId, confirmClose)
@@ -149,7 +149,7 @@ function simpleCloseStaticTab() {
 function uxCloseBlock(blockId: string) {
     const workspaceLayoutModel = WorkspaceLayoutModel.getInstance();
     const isAIPanelOpen = workspaceLayoutModel.getAIPanelVisible();
-    if (isAIPanelOpen && getStaticTabBlockCount() === 1) {
+    if (isAIPanelOpen && getCurrentTabBlockCount() === 1) {
         const aiModel = WaveAIModel.getInstance();
         const shouldSwitchToAI = !globalStore.get(aiModel.isChatEmptyAtom) || aiModel.hasNonEmptyInput();
         if (shouldSwitchToAI) {
@@ -163,14 +163,14 @@ function uxCloseBlock(blockId: string) {
     const blockData = globalStore.get(blockAtom);
     const isAIFileDiff = blockData?.meta?.view === "aifilediff";
 
-    // If this is the last block, closing it will close the tab — route through simpleCloseStaticTab
+    // If this is the last block, closing it will close the tab — route through simpleCloseCurrentTab
     // so the tab:confirmclose setting is respected.
-    if (getStaticTabBlockCount() === 1) {
-        simpleCloseStaticTab();
+    if (getCurrentTabBlockCount() === 1) {
+        simpleCloseCurrentTab();
         return;
     }
 
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const node = layoutModel.getNodeByBlockId(blockId);
     if (node) {
         fireAndForget(() => layoutModel.closeNode(node.id));
@@ -190,11 +190,11 @@ function genericClose() {
 
     const workspaceLayoutModel = WorkspaceLayoutModel.getInstance();
     const isAIPanelOpen = workspaceLayoutModel.getAIPanelVisible();
-    if (isAIPanelOpen && getStaticTabBlockCount() === 1) {
+    if (isAIPanelOpen && getCurrentTabBlockCount() === 1) {
         const aiModel = WaveAIModel.getInstance();
         const shouldSwitchToAI = !globalStore.get(aiModel.isChatEmptyAtom) || aiModel.hasNonEmptyInput();
         if (shouldSwitchToAI) {
-            const layoutModel = getLayoutModelForStaticTab();
+            const layoutModel = getLayoutModelForCurrentTab();
             const focusedNode = globalStore.get(layoutModel.focusedNode);
             if (focusedNode) {
                 replaceBlock(focusedNode.data.blockId, { meta: { view: "launcher" } }, false);
@@ -203,20 +203,20 @@ function genericClose() {
             }
         }
     }
-    const blockCount = getStaticTabBlockCount();
+    const blockCount = getCurrentTabBlockCount();
     if (blockCount === 0) {
-        simpleCloseStaticTab();
+        simpleCloseCurrentTab();
         return;
     }
 
-    // If this is the last block, closing it will close the tab — route through simpleCloseStaticTab
+    // If this is the last block, closing it will close the tab — route through simpleCloseCurrentTab
     // so the tab:confirmclose setting is respected.
     if (blockCount === 1) {
-        simpleCloseStaticTab();
+        simpleCloseCurrentTab();
         return;
     }
 
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const focusedNode = globalStore.get(layoutModel.focusedNode);
     const blockId = focusedNode?.data?.blockId;
     const blockAtom = blockId ? WOS.getWaveObjectAtom<Block>(WOS.makeORef("block", blockId)) : null;
@@ -232,7 +232,7 @@ function genericClose() {
 
 function switchBlockByBlockNum(index: number) {
     termLog("[block]", "switchBlockByBlockNum", index);
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     if (!layoutModel) {
         return;
     }
@@ -244,7 +244,7 @@ function switchBlockByBlockNum(index: number) {
 
 function switchBlockInDirection(direction: NavigateDirection) {
     termLog("[block]", "switchBlockInDirection", direction);
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const focusType = FocusManager.getInstance().getFocusType();
 
     if (direction === NavigateDirection.Left) {
@@ -299,7 +299,7 @@ function switchTabAbs(index: number) {
 function switchTab(offset: number) {
     termLog("[tab]", "switchTab", offset);
     const ws = globalStore.get(atoms.workspace);
-    const curTabId = globalStore.get(atoms.staticTabId);
+    const curTabId = globalStore.get(atoms.currentTabId);
     let tabIdx = -1;
     const tabids = getAllTabs(ws);
     for (let i = 0; i < tabids.length; i++) {
@@ -331,7 +331,7 @@ function globalRefocus() {
         return;
     }
 
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const focusedNode = globalStore.get(layoutModel.focusedNode);
     if (focusedNode == null) {
         termLog("[block]", "globalRefocus: no focused node, focus first");
@@ -363,7 +363,7 @@ function getDefaultNewBlockDef(): BlockDef {
             controller: "shell",
         },
     };
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const focusedNode = globalStore.get(layoutModel.focusedNode);
     let hasExplicitConn = false;
     let hasExplicitCwd = false;
@@ -398,7 +398,7 @@ async function handleCmdN() {
 }
 
 async function handleSplitHorizontal(position: "before" | "after") {
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const focusedNode = globalStore.get(layoutModel.focusedNode);
     if (focusedNode == null) {
         return;
@@ -408,7 +408,7 @@ async function handleSplitHorizontal(position: "before" | "after") {
 }
 
 async function handleSplitVertical(position: "before" | "after") {
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const focusedNode = globalStore.get(layoutModel.focusedNode);
     if (focusedNode == null) {
         return;
@@ -467,7 +467,7 @@ function appHandleKeyDown(waveEvent: WaveKeyboardEvent): boolean {
         }
     }
     if (isTabWindow()) {
-        const layoutModel = getLayoutModelForStaticTab();
+        const layoutModel = getLayoutModelForCurrentTab();
         const focusedNode = globalStore.get(layoutModel.focusedNode);
         const blockId = focusedNode?.data?.blockId;
         if (blockId != null && shouldDispatchToBlock(waveEvent)) {
@@ -559,11 +559,11 @@ function registerGlobalKeys() {
         return true;
     });
     globalKeyMap.set("Cmd:Shift:w", () => {
-        simpleCloseStaticTab();
+        simpleCloseCurrentTab();
         return true;
     });
     globalKeyMap.set("Cmd:m", () => {
-        const layoutModel = getLayoutModelForStaticTab();
+        const layoutModel = getLayoutModelForCurrentTab();
         const focusedNode = globalStore.get(layoutModel.focusedNode);
         if (focusedNode != null) {
             const ephemeralNode = globalStore.get(layoutModel.ephemeralNode);
@@ -665,7 +665,7 @@ function registerGlobalKeys() {
         return false;
     });
     globalKeyMap.set("Cmd:g", () => {
-        const bcm = getBlockComponentModel(getFocusedBlockInStaticTab());
+        const bcm = getBlockComponentModel(getFocusedBlockInCurrentTab());
         if (bcm.openSwitchConnection != null) {
             recordTEvent("action:other", { "action:type": "conndropdown", "action:initiator": "keyboard" });
             bcm.openSwitchConnection();
@@ -720,7 +720,7 @@ function registerGlobalKeys() {
     }
     function getSelectedText(): string {
         // Check for terminal selection first
-        const bcm = getBlockComponentModel(getFocusedBlockInStaticTab());
+        const bcm = getBlockComponentModel(getFocusedBlockInCurrentTab());
         if (bcm?.viewModel?.viewType === "term") {
             const termViewModel = bcm.viewModel as TermViewModel;
             if (termViewModel.termRef?.current?.terminal) {
@@ -743,7 +743,7 @@ function registerGlobalKeys() {
     }
 
     function activateSearch(event: WaveKeyboardEvent): boolean {
-        const bcm = getBlockComponentModel(getFocusedBlockInStaticTab());
+        const bcm = getBlockComponentModel(getFocusedBlockInCurrentTab());
         // Ctrl+f is reserved in most shells
         if (event.control && bcm.viewModel.viewType == "term") {
             return false;
@@ -763,7 +763,7 @@ function registerGlobalKeys() {
         return false;
     }
     function deactivateSearch(): boolean {
-        const bcm = getBlockComponentModel(getFocusedBlockInStaticTab());
+        const bcm = getBlockComponentModel(getFocusedBlockInCurrentTab());
         if (bcm.viewModel.searchAtoms && globalStore.get(bcm.viewModel.searchAtoms.isOpen)) {
             globalStore.set(bcm.viewModel.searchAtoms.isOpen, false);
             return true;

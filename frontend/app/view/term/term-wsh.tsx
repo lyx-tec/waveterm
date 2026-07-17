@@ -29,7 +29,7 @@ export class TermWshClient extends WshClient {
             throw new Error("source cannot be blank");
         }
         console.log("vdom-create", source, data);
-        const tabId = globalStore.get(atoms.staticTabId);
+        const tabId = globalStore.get(atoms.currentTabId);
         if (data.target?.newblock) {
             const oref = await RpcApi.CreateBlockCommand(this, {
                 tabid: tabId,

@@ -127,7 +127,7 @@ const TabBar = memo(({ workspace, noTabs }: TabBarProps) => {
     const tabWidthRef = useRef<number>(TabDefaultWidth);
     const scrollableRef = useRef<boolean>(false);
     const prevAllLoadedRef = useRef<boolean>(false);
-    const activeTabId = useAtomValue(env.atoms.staticTabId);
+    const activeTabId = useAtomValue(env.atoms.currentTabId);
     const isFullScreen = useAtomValue(env.atoms.isFullScreen);
     const zoomFactor = useAtomValue(env.atoms.zoomFactorAtom);
     const showMenuBar = useAtomValue(env.getSettingsKeyAtom("window:showmenubar"));

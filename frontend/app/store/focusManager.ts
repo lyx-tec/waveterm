@@ -9,7 +9,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import { termLog } from "@/util/termlog";
 import { fireAndForget } from "@/util/util";
-import { getLayoutModelForStaticTab } from "@/layout/index";
+import { getLayoutModelForCurrentTab } from "@/layout/index";
 import { focusedBlockId } from "@/util/focusutil";
 import { Atom, atom, type PrimitiveAtom } from "jotai";
 
@@ -26,7 +26,7 @@ export class FocusManager {
             if (get(this.focusType) == "waveai") {
                 return null;
             }
-            const layoutModel = getLayoutModelForStaticTab();
+            const layoutModel = getLayoutModelForCurrentTab();
             const lnode = get(layoutModel.focusedNode);
             return lnode?.data?.blockId;
         });
@@ -104,7 +104,7 @@ export class FocusManager {
             WaveAIModel.getInstance().focusInput();
             return;
         }
-        const layoutModel = getLayoutModelForStaticTab();
+        const layoutModel = getLayoutModelForCurrentTab();
         const lnode = globalStore.get(layoutModel.focusedNode);
         if (lnode == null || lnode.data?.blockId == null) {
             return;

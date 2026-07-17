@@ -15,13 +15,13 @@ function initGlobalAtoms(initOpts: GlobalInitOptions) {
     const builderIdAtom = atom(initOpts.builderId) as PrimitiveAtom<string>;
     const builderAppIdAtom = atom<string>(null) as PrimitiveAtom<string>;
     setWaveWindowType(initOpts.isPreview ? "preview" : initOpts.builderId != null ? "builder" : "tab");
-    // Tab views are reused across workspace switches, so reinit updates this to the workspace active tab.
-    const staticTabIdAtom = atom(initOpts.tabId) as PrimitiveAtom<string>;
+    // Tab views are reused across workspace switches, so reinit updates this to the new workspace's tab context.
+    const currentTabIdAtom = atom(initOpts.tabId) as PrimitiveAtom<string>;
     const windowIdAtom = atom(initOpts.windowId) as PrimitiveAtom<string>;
     const uiContextAtom = atom((get) => {
         const uiContext: UIContext = {
             windowid: get(windowIdAtom),
-            activetabid: get(staticTabIdAtom),
+            activetabid: get(currentTabIdAtom),
         };
         return uiContext;
     }) as Atom<UIContext>;
@@ -144,7 +144,7 @@ function initGlobalAtoms(initOpts: GlobalInitOptions) {
         settingsAtom,
         hasCustomAIPresetsAtom,
         hasConfigErrors,
-        staticTabId: staticTabIdAtom,
+        currentTabId: currentTabIdAtom,
         isFullScreen: isFullScreenAtom,
         zoomFactorAtom,
         controlShiftDelayAtom,

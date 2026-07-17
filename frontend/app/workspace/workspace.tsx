@@ -41,7 +41,7 @@ MacOSTabBarSpacer.displayName = "MacOSTabBarSpacer";
 
 const WorkspaceElem = memo(() => {
     const workspaceLayoutModel = WorkspaceLayoutModel.getInstance();
-    const tabId = useAtomValue(atoms.staticTabId);
+    const tabId = useAtomValue(atoms.currentTabId);
     const ws = useAtomValue(atoms.workspace);
     const tabBarPosition = useAtomValue(getSettingsKeyAtom("app:tabbar")) ?? "top";
     const showLeftTabBar = tabBarPosition === "left";

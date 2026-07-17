@@ -5,7 +5,7 @@ import { WaveAIModel } from "@/app/aipanel/waveai-model";
 import { getApi, getBlockComponentModel, getConnStatusAtom, globalStore, WOS } from "@/app/store/global";
 import type { TermViewModel } from "@/app/view/term/term-model";
 import { WorkspaceLayoutModel } from "@/app/workspace/workspace-layout-model";
-import { getLayoutModelForStaticTab } from "@/layout/index";
+import { getLayoutModelForCurrentTab } from "@/layout/index";
 import { termLog } from "@/util/termlog";
 import { base64ToArrayBuffer } from "@/util/util";
 import { RpcResponseHelper, WshClient } from "./wshclient";
@@ -21,7 +21,7 @@ export class TabClient extends WshClient {
     }
 
     async captureBlockScreenshot(blockId: string): Promise<string> {
-        const layoutModel = getLayoutModelForStaticTab();
+        const layoutModel = getLayoutModelForCurrentTab();
         if (!layoutModel) {
             throw new Error("Layout model not found");
         }
@@ -95,7 +95,7 @@ export class TabClient extends WshClient {
 
     async handle_setblockfocus(rh: RpcResponseHelper, blockId: string): Promise<void> {
         termLog("[block]", "handle_setblockfocus (RPC)", blockId);
-        const layoutModel = getLayoutModelForStaticTab();
+        const layoutModel = getLayoutModelForCurrentTab();
         if (!layoutModel) {
             throw new Error("Layout model not found");
         }
@@ -109,7 +109,7 @@ export class TabClient extends WshClient {
     }
 
     async handle_getfocusedblockdata(rh: RpcResponseHelper): Promise<FocusedBlockData> {
-        const layoutModel = getLayoutModelForStaticTab();
+        const layoutModel = getLayoutModelForCurrentTab();
         if (!layoutModel) {
             throw new Error("Layout model not found");
         }
