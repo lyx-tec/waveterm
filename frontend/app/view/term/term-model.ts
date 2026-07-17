@@ -801,7 +801,7 @@ export class TermViewModel implements ViewModel {
             cols: this.termRef.current?.terminal?.cols,
         };
         await RpcApi.ControllerResyncCommand(TabRpcClient, {
-            tabid: globalStore.get(atoms.staticTabId),
+            tabid: globalStore.get(atoms.currentTabId),
             blockid: this.blockId,
             forcerestart: true,
             rtopts: { termsize: termsize },
@@ -819,7 +819,7 @@ export class TermViewModel implements ViewModel {
             cols: this.termRef.current?.terminal?.cols,
         };
         await RpcApi.ControllerResyncCommand(TabRpcClient, {
-            tabid: globalStore.get(atoms.staticTabId),
+            tabid: globalStore.get(atoms.currentTabId),
             blockid: this.blockId,
             forcerestart: true,
             rtopts: { termsize: termsize },

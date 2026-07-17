@@ -17,7 +17,7 @@ import { RpcApi } from "@/app/store/wshclientapi";
 import { makeBuilderRouteId, makeTabRouteId } from "@/app/store/wshrouter";
 import { initWshrpc, TabRpcClient } from "@/app/store/wshrpcutil";
 import { BuilderApp } from "@/builder/builder-app";
-import { getLayoutModelForStaticTab } from "@/layout/index";
+import { getLayoutModelForCurrentTab } from "@/layout/index";
 import { countersClear, countersPrint } from "@/store/counters";
 import {
     atoms,
@@ -88,7 +88,7 @@ function waitForNextPaint(): Promise<void> {
 (window as any).isFullScreen = false;
 (window as any).countersPrint = countersPrint;
 (window as any).countersClear = countersClear;
-(window as any).getLayoutModelForStaticTab = getLayoutModelForStaticTab;
+(window as any).getLayoutModelForCurrentTab = getLayoutModelForCurrentTab;
 (window as any).modalsModel = modalsModel;
 
 async function loadWorkspaceContext(opts: {
@@ -151,7 +151,7 @@ function applyWorkspaceContext(ctx: WorkspaceContext, opts: { tabContext: "own" 
     globalStore.set(atoms.windowId, ctx.waveWindow.oid);
     globalStore.set(atoms.workspaceId, ctx.workspace.oid);
     globalStore.set(activeTabIdAtom, ctx.activeTabId);
-    globalStore.set(atoms.staticTabId, tabIdForRenderer);
+    globalStore.set(atoms.currentTabId, tabIdForRenderer);
     globalStore.set(atoms.updaterStatusAtom, getApi().getUpdaterStatus());
 }
 
@@ -186,7 +186,7 @@ async function initWaveWrap(initOpts: WaveInitOpts) {
     try {
         if (savedInitOpts) {
             globalStore.set(activeTabIdAtom, initOpts.tabId);
-            globalStore.set(atoms.staticTabId, initOpts.tabId);
+            globalStore.set(atoms.currentTabId, initOpts.tabId);
             await reinitWave();
             return;
         }

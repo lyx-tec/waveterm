@@ -7,7 +7,7 @@ import { isBuilderWindow } from "@/app/store/windowtype";
 import * as WOS from "@/app/store/wos";
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
-import { getLayoutModelForStaticTab } from "@/layout/lib/layoutModelHooks";
+import { getLayoutModelForCurrentTab } from "@/layout/lib/layoutModelHooks";
 import { atoms, getApi, getOrefMetaKeyAtom, getSettingsKeyAtom, recordTEvent, refocusNode } from "@/store/global";
 import debug from "debug";
 import * as jotai from "jotai";
@@ -122,7 +122,7 @@ class WorkspaceLayoutModel {
     // ---- Meta / persistence helpers ----
 
     private getTabId(): string {
-        return globalStore.get(atoms.staticTabId);
+        return globalStore.get(atoms.currentTabId);
     }
 
     private getWorkspaceId(): string {
@@ -413,7 +413,7 @@ class WorkspaceLayoutModel {
                 }, 350);
             }
         } else {
-            const layoutModel = getLayoutModelForStaticTab();
+            const layoutModel = getLayoutModelForCurrentTab();
             const focusedNode = globalStore.get(layoutModel.focusedNode);
             if (focusedNode == null) {
                 layoutModel.focusFirstNode();

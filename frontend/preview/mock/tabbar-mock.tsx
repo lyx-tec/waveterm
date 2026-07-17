@@ -107,7 +107,7 @@ export function makeTabBarMockEnv(
         mockWaveObjs,
         atoms: {
             workspaceId: atom(TabBarMockWorkspaceId),
-            staticTabId: atom(TabBarMockTabs[1].tabId),
+            currentTabId: atom(TabBarMockTabs[1].tabId),
         },
         rpc: {
             GetAllBadgesCommand: () => Promise.resolve(makeMockBadgeEvents()),
@@ -130,7 +130,7 @@ export function makeTabBarMockEnv(
                     ...ws,
                     tabids: [...(ws.tabids ?? []), newTabId],
                 });
-                globalStore.set(e.atoms.staticTabId as any, newTabId);
+                globalStore.set(e.atoms.currentTabId as any, newTabId);
             },
             closeTab: (_workspaceId: string, tabId: string) => {
                 const e = envRef.current;
@@ -141,15 +141,15 @@ export function makeTabBarMockEnv(
                     return Promise.resolve(false);
                 }
                 e.mockSetWaveObj(`workspace:${TabBarMockWorkspaceId}`, { ...ws, tabids: newTabIds });
-                if (globalStore.get(e.atoms.staticTabId) === tabId) {
-                    globalStore.set(e.atoms.staticTabId as any, newTabIds[0]);
+                if (globalStore.get(e.atoms.currentTabId) === tabId) {
+                    globalStore.set(e.atoms.currentTabId as any, newTabIds[0]);
                 }
                 return Promise.resolve(true);
             },
             setActiveTab: (tabId: string) => {
                 const e = envRef.current;
                 if (e == null) return;
-                globalStore.set(e.atoms.staticTabId as any, tabId);
+                globalStore.set(e.atoms.currentTabId as any, tabId);
             },
             showWorkspaceAppMenu: () => {
                 console.log("[preview] showWorkspaceAppMenu");

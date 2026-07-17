@@ -186,7 +186,7 @@ function VTabWrapper({
 
 export function VTabBar({ workspace, className }: VTabBarProps) {
     const env = useWaveEnv<VTabBarEnv>();
-    const activeTabId = useAtomValue(env.atoms.staticTabId);
+    const activeTabId = useAtomValue(env.atoms.currentTabId);
     const reinitVersion = useAtomValue(env.atoms.reinitVersion);
     const documentHasFocus = useAtomValue(env.atoms.documentHasFocus);
     const tabIds = workspace?.tabids ?? [];

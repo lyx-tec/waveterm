@@ -21,7 +21,7 @@ export type VTabBarEnv = WaveEnvSubset<{
         SetMetaCommand: WaveEnv["rpc"]["SetMetaCommand"];
     };
     atoms: {
-        staticTabId: WaveEnv["atoms"]["staticTabId"];
+        currentTabId: WaveEnv["atoms"]["currentTabId"];
         fullConfigAtom: WaveEnv["atoms"]["fullConfigAtom"];
         reinitVersion: WaveEnv["atoms"]["reinitVersion"];
         documentHasFocus: WaveEnv["atoms"]["documentHasFocus"];

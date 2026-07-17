@@ -4,7 +4,7 @@
 import { RpcApi } from "@/app/store/wshclientapi";
 import { TabRpcClient } from "@/app/store/wshrpcutil";
 import {
-    getLayoutModelForStaticTab,
+    getLayoutModelForCurrentTab,
     LayoutTreeActionType,
     LayoutTreeInsertNodeAction,
     newLayoutNode,
@@ -396,7 +396,7 @@ async function createBlockSplitHorizontally(
     targetBlockId: string,
     position: "before" | "after"
 ): Promise<string> {
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const rtOpts: RuntimeOpts = { termsize: { rows: 25, cols: 80 } };
     blockDef = applyWorkspaceDefaultsToBlockDef(blockDef);
     const newBlockId = await ObjectService.CreateBlock(blockDef, rtOpts);
@@ -420,7 +420,7 @@ async function createBlockSplitVertically(
     targetBlockId: string,
     position: "before" | "after"
 ): Promise<string> {
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const rtOpts: RuntimeOpts = { termsize: { rows: 25, cols: 80 } };
     blockDef = applyWorkspaceDefaultsToBlockDef(blockDef);
     const newBlockId = await ObjectService.CreateBlock(blockDef, rtOpts);
@@ -440,7 +440,7 @@ async function createBlockSplitVertically(
 }
 
 async function createBlock(blockDef: BlockDef, magnified = false, ephemeral = false): Promise<string> {
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const rtOpts: RuntimeOpts = { termsize: { rows: 25, cols: 80 } };
     blockDef = applyWorkspaceDefaultsToBlockDef(blockDef);
     const blockId = await ObjectService.CreateBlock(blockDef, rtOpts);
@@ -459,7 +459,7 @@ async function createBlock(blockDef: BlockDef, magnified = false, ephemeral = fa
 }
 
 async function replaceBlock(blockId: string, blockDef: BlockDef, focus: boolean): Promise<string> {
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const rtOpts: RuntimeOpts = { termsize: { rows: 25, cols: 80 } };
     blockDef = applyWorkspaceDefaultsToBlockDef(blockDef);
     const newBlockId = await ObjectService.CreateBlock(blockDef, rtOpts);
@@ -513,7 +513,7 @@ async function fetchWaveFile(
 
 function setNodeFocus(nodeId: string) {
     termLog("[block]", "setNodeFocus", nodeId);
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     layoutModel.focusNode(nodeId);
 }
 
@@ -601,7 +601,7 @@ function getAllBlockComponentModels(): BlockComponentModel[] {
 }
 
 function getFocusedBlockId(): string {
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     if (layoutModel?.focusedNode == null) return null;
     const focusedLayoutNode = globalStore.get(layoutModel.focusedNode);
     return focusedLayoutNode?.data?.blockId;
@@ -616,7 +616,7 @@ function refocusNode(blockId: string) {
         }
     }
     termLog("[block]", "refocusNode", blockId);
-    const layoutModel = getLayoutModelForStaticTab();
+    const layoutModel = getLayoutModelForCurrentTab();
     const layoutNodeId = layoutModel.getNodeByBlockId(blockId);
     if (layoutNodeId?.id == null) {
         return;

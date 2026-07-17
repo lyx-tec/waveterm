@@ -190,7 +190,7 @@ function makeMockGlobalAtoms(
             const c = get(fullConfigAtom);
             return c?.configerrors != null && c.configerrors.length > 0;
         }),
-        staticTabId: atom(tabId ?? ""),
+        currentTabId: atom(tabId ?? ""),
         isFullScreen: atom(false) as any,
         zoomFactorAtom: atom(1.0) as any,
         controlShiftDelayAtom: atom(false) as any,
@@ -436,7 +436,7 @@ export function makeMockWaveEnv(mockEnv?: MockEnv): MockWaveEnv {
     };
     const defaultAtoms: Partial<GlobalAtomsType> = {
         uiContext: atom({ windowid: PreviewWindowId, activetabid: PreviewTabId } as UIContext),
-        staticTabId: atom(PreviewTabId),
+        currentTabId: atom(PreviewTabId),
         workspaceId: atom(PreviewWorkspaceId),
     };
     const mergedOverrides: MockEnv = {
