@@ -476,7 +476,12 @@ export class WaveBrowserWindow extends BaseWindow {
         }
     }
 
-    private async setTabViewIntoWindow(tabView: WaveTabView, tabInitialized: boolean, primaryStartupTab = false) {
+    private async setTabViewIntoWindow(
+        tabView: WaveTabView,
+        tabInitialized: boolean,
+        primaryStartupTab = false,
+        isWorkspaceSwitch = false
+    ) {
         if (this.activeTabView == tabView) {
             return;
         }
@@ -490,11 +495,21 @@ export class WaveBrowserWindow extends BaseWindow {
         if (!tabInitialized) {
             console.log("initializing a new tab", primaryStartupTab ? "(primary startup)" : "");
             await this.initializeTab(tabView, primaryStartupTab);
+            if (isWorkspaceSwitch) {
+                this.logWorkspaceSwitch("view-attached", `tab=${tabView.waveTabId}`);
+                this.logWorkspaceSwitch("init-sent");
+            }
             this.finalizePositioning();
         } else {
             console.log("reusing an existing tab, calling wave-init", tabView.waveTabId);
             this.contentView.addChildView(tabView);
+            if (isWorkspaceSwitch) {
+                this.logWorkspaceSwitch("view-attached", `tab=${tabView.waveTabId}`);
+            }
             tabView.webContents.send("wave-init", tabView.savedInitOpts); // reinit
+            if (isWorkspaceSwitch) {
+                this.logWorkspaceSwitch("reinit-sent");
+            }
             this.finalizePositioning();
         }
 
@@ -552,18 +567,49 @@ export class WaveBrowserWindow extends BaseWindow {
         }, delayMs);
     }
 
+    private logWorkspaceSwitch(phase: string, extra?: string) {
+        console.log(`switchworkspace:${phase}`, this.waveWindowId, extra ?? "");
+    }
+
+    // Detach all current workspace views from the view tree, keeping them alive in wcvCache.
+    // Returns the active tab id of the new workspace, or null on failure.
+    private async detachForWorkspaceSwitch(newWorkspaceId: string): Promise<string | null> {
+        this.logWorkspaceSwitch("start", `target=${newWorkspaceId}`);
+
+        const newWs = await WindowService.SwitchWorkspace(this.waveWindowId, newWorkspaceId);
+        if (!newWs) {
+            this.logWorkspaceSwitch("backend-failed", "no workspace returned");
+            return null;
+        }
+        this.logWorkspaceSwitch("backend-ready", `workspace=${newWs.oid}`);
+
+        const oldViewCount = this.allLoadedTabViews.size;
+        this.activeTabView = null;
+        for (const tabView of this.allLoadedTabViews.values()) {
+            tabView.isActiveTab = false;
+            this.contentView.removeChildView(tabView);
+        }
+        this.workspaceId = newWs.oid;
+        this.allLoadedTabViews = new Map();
+        this.logWorkspaceSwitch("previous-views-detached", `count=${oldViewCount}, kept-alive-in-cache`);
+
+        return newWs.activetabid;
+    }
+
     // the queue and this function are used to serialize operations that update the window contents view
     // processActionQueue will replace [1] if it is already set
     // we don't mess with [0] because it is "in process"
     // we replace [1] because there is no point to run an action that is going to be overwritten
     private async processActionQueue() {
         while (this.actionQueue.length > 0) {
+            let entry: WindowActionQueueEntry = null;
+            let success = false;
             try {
                 if (this.isDestroyed()) {
                     break;
                 }
-                const entry = this.actionQueue[0];
                 let tabId: string = null;
+                entry = this.actionQueue[0];
                 // have to use "===" here to get the typechecker to work :/
                 switch (entry.op) {
                     case "createtab":
@@ -588,7 +634,7 @@ export class WaveBrowserWindow extends BaseWindow {
                                 this.workspaceId,
                                 this.waveWindowId
                             );
-                            return;
+                            continue;
                         }
                         this.removeTabViewLater(tabId, 1000);
                         if (rtn.closewindow) {
@@ -596,38 +642,41 @@ export class WaveBrowserWindow extends BaseWindow {
                             return;
                         }
                         if (!rtn.newactivetabid) {
-                            return;
+                            continue;
                         }
                         tabId = rtn.newactivetabid;
                         break;
                     }
-                    case "switchworkspace": {
-                        const newWs = await WindowService.SwitchWorkspace(this.waveWindowId, entry.workspaceId);
-                        if (!newWs) {
-                            return;
+                    case "switchworkspace":
+                        tabId = await this.detachForWorkspaceSwitch(entry.workspaceId);
+                        if (tabId == null) {
+                            continue;
                         }
-                        console.log("processActionQueue switchworkspace keep-alive tabs:", this.allLoadedTabViews.size);
-                        const curBounds = this.getContentBounds();
-                        for (const tabView of this.allLoadedTabViews.values()) {
-                            tabView.isActiveTab = false;
-                            tabView.positionTabOffScreen(curBounds);
-                        }
-                        this.workspaceId = entry.workspaceId;
-                        this.allLoadedTabViews = new Map();
-                        tabId = newWs.activetabid;
                         break;
-                    }
                 }
                 if (tabId == null) {
-                    return;
+                    continue;
                 }
                 const [tabView, tabInitialized] = await getOrCreateWebViewForTab(this.waveWindowId, tabId);
                 const primaryStartupTabFlag = entry.op === "switchtab" ? (entry.primaryStartupTab ?? false) : false;
-                await this.setTabViewIntoWindow(tabView, tabInitialized, primaryStartupTabFlag);
+                await this.setTabViewIntoWindow(
+                    tabView,
+                    tabInitialized,
+                    primaryStartupTabFlag,
+                    entry.op === "switchworkspace"
+                );
+                success = true;
             } catch (e) {
                 console.log("error caught in processActionQueue", e);
             } finally {
                 this.actionQueue.shift();
+                if (entry?.op === "switchworkspace") {
+                    if (success) {
+                        this.logWorkspaceSwitch("ready");
+                    } else {
+                        this.logWorkspaceSwitch("failed");
+                    }
+                }
             }
         }
     }
