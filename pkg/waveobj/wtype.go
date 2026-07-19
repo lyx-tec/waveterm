@@ -186,6 +186,16 @@ type Workspace struct {
 	Meta            MetaMapType `json:"meta"`
 }
 
+// WorkspaceScript is a user-defined command script stored in a workspace's meta
+// under the "scripts:list" key.
+type WorkspaceScript struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Command  string `json:"command"`
+	Desc     string `json:"desc,omitempty"`
+	LastUsed int64  `json:"lastused,omitempty"`
+}
+
 func (*Workspace) GetOType() string {
 	return OType_Workspace
 }

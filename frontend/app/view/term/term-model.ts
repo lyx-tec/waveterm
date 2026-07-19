@@ -38,6 +38,7 @@ import * as services from "@/store/services";
 import * as keyutil from "@/util/keyutil";
 import { isMacOS, isWindows } from "@/util/platformutil";
 import { boundNumber, fireAndForget, stringToBase64 } from "@/util/util";
+import { openScriptsPicker } from "@/app/workspace/workspace-scripts";
 import * as jotai from "jotai";
 import * as React from "react";
 import { getBlockingCommand } from "./shellblocking";
@@ -826,7 +827,7 @@ export class TermViewModel implements ViewModel {
         });
     }
 
-    getContextMenuItems(): ContextMenuItem[] {
+    getContextMenuItems(blockId: string): ContextMenuItem[] {
         const menu: ContextMenuItem[] = [];
         const hasSelection = this.termRef.current?.terminal?.hasSelection();
         const selection = hasSelection ? this.termRef.current?.terminal.getSelection() : null;
@@ -897,6 +898,15 @@ export class TermViewModel implements ViewModel {
             label: "Paste",
             click: () => {
                 getApi().nativePaste();
+            },
+        });
+
+        menu.push({ type: "separator" });
+
+        menu.push({
+            label: "Run Script...",
+            click: () => {
+                openScriptsPicker(blockId);
             },
         });
 
