@@ -27,6 +27,7 @@ import * as keyutil from "@/util/keyutil";
 import { isWindows } from "@/util/platformutil";
 import { termLog } from "@/util/termlog";
 import { CHORD_TIMEOUT } from "@/util/sharedconst";
+import { openScriptsPicker } from "@/app/workspace/workspace-scripts";
 import { fireAndForget } from "@/util/util";
 import * as jotai from "jotai";
 import { TermViewModel } from "../view/term/term-model";
@@ -663,6 +664,9 @@ function registerGlobalKeys() {
             return true;
         }
         return false;
+    });
+    globalKeyMap.set("Ctrl:Shift:e", () => {
+        return openScriptsPicker();
     });
     globalKeyMap.set("Cmd:g", () => {
         const bcm = getBlockComponentModel(getFocusedBlockInCurrentTab());

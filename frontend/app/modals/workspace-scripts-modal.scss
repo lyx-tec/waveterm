@@ -1,0 +1,278 @@
+// Copyright 2026, Command Line Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+.workspace-scripts-modal {
+    width: 520px;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 0 12px;
+    gap: 0;
+
+    .scripts-modal-root {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        width: 100%;
+        outline: none;
+    }
+
+    .scripts-modal-header {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--main-text-color);
+        padding: 0 20px 12px;
+        user-select: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        &::before {
+            content: "\f085";
+            font-family: "Font Awesome 6 Sharp", "Font Awesome 6 Free", "Font Awesome 5 Free", sans-serif;
+            font-weight: 900;
+            font-size: 12px;
+            color: var(--accent-color);
+        }
+    }
+
+    .scripts-modal-body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0 20px;
+    }
+
+    .modal-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+        color: var(--secondary-text-color);
+    }
+
+    .scripts-empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 44px 20px;
+        gap: 10px;
+
+        .scripts-empty-icon {
+            font-size: 32px;
+            color: var(--secondary-text-color);
+            opacity: 0.25;
+        }
+
+        .scripts-empty-text {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--main-text-color);
+            margin-top: 2px;
+        }
+
+        .scripts-empty-subtext {
+            font-size: 12px;
+            color: var(--secondary-text-color);
+            text-align: center;
+            line-height: 1.5;
+        }
+    }
+
+    .scripts-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 4px 0;
+    }
+
+    .script-item {
+        border: 1px solid var(--modal-border-color);
+        border-radius: 6px;
+        padding: 10px 12px;
+        background: var(--modal-bg-color);
+        transition: border-color 0.15s, box-shadow 0.15s;
+        position: relative;
+
+        &:hover {
+            border-color: rgb(from var(--accent-color) r g b / 0.3);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .script-item-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .script-item-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--main-text-color);
+        }
+
+        .script-item-actions {
+            display: flex;
+            gap: 2px;
+            opacity: 0;
+            transition: opacity 0.12s;
+        }
+
+        &:hover .script-item-actions {
+            opacity: 1;
+        }
+
+        .script-action-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            border: none;
+            border-radius: 4px;
+            background: transparent;
+            color: var(--secondary-text-color);
+            cursor: pointer;
+            font-size: 12px;
+            transition: background-color 0.12s, color 0.12s;
+
+            &:hover {
+                background-color: var(--highlight-bg-color);
+                color: var(--main-text-color);
+            }
+
+            &.delete:hover {
+                color: var(--error-color);
+                background-color: rgb(from var(--error-color) r g b / 0.12);
+            }
+        }
+
+        .script-item-desc {
+            font-size: 11px;
+            color: var(--secondary-text-color);
+            opacity: 0.7;
+            margin-top: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+
+        .script-item-command {
+            font-size: 11px;
+            color: var(--secondary-text-color);
+            font-family: var(--termfontfamily);
+            margin-top: 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+    }
+
+    // Left accent bar signals "this is the editing area" without creating a
+    // double-frame effect when the inner input/textarea is focused.
+    .script-edit-form {
+        border: 1px solid var(--modal-border-color);
+        border-left: 3px solid var(--accent-color);
+        border-radius: 6px;
+        padding: 12px 12px 12px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .script-form-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+
+        label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--main-text-color);
+            user-select: none;
+        }
+
+        .input {
+            font-size: 13px;
+            padding: 7px 10px;
+            background: var(--form-element-bg-color);
+            border-color: var(--form-element-border-color);
+
+            &:focus-within {
+                border-color: var(--accent-color);
+            }
+        }
+    }
+
+    .form-field-grow {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+
+        textarea {
+            flex: 1;
+            min-height: 80px;
+        }
+    }
+
+    textarea {
+        width: 100%;
+        font-size: 12px;
+        padding: 7px 10px;
+        border: 1px solid var(--form-element-border-color);
+        border-radius: 4px;
+        background: var(--form-element-bg-color);
+        color: var(--main-text-color);
+        resize: vertical;
+        line-height: 1.5;
+        transition: border-color 0.15s;
+
+        &:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+
+        &::placeholder {
+            color: var(--secondary-text-color);
+            opacity: 0.5;
+        }
+    }
+
+    .script-command-textarea {
+        font-family: var(--termfontfamily);
+        min-height: 72px;
+    }
+
+    .script-desc-textarea {
+        font-family: var(--base-font);
+        min-height: 40px;
+    }
+
+    .script-form-error {
+        font-size: 12px;
+        color: var(--error-color);
+        padding: 6px 8px;
+        background: rgb(from var(--error-color) r g b / 0.08);
+        border-radius: 4px;
+    }
+
+    .script-form-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding-top: 2px;
+    }
+
+    .scripts-modal-footer {
+        display: flex;
+        justify-content: center;
+        padding: 12px 20px 0;
+        border-top: 1px solid var(--modal-border-color);
+        margin: 0 20px;
+    }
+}

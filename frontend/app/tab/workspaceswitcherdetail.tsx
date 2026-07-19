@@ -143,6 +143,7 @@ const WorkspaceSwitcherDetail = ({
                     connName={draft.defaultconnname}
                     cwd={draft.defaultcwd}
                     focusInput
+                    workspaceId={workspace.oid}
                     onTitleChange={(newTitle) => setWorkspaceField({ name: newTitle })}
                     onColorChange={(newColor) => setWorkspaceField({ color: newColor })}
                     onIconChange={(newIcon) => setWorkspaceField({ icon: newIcon })}

@@ -1224,6 +1224,7 @@ declare global {
         "bg:activebordercolor"?: string;
         "layout:vtabbarwidth"?: number;
         "layout:widgetsvisible"?: boolean;
+        "scripts:list"?: WorkspaceScript[];
         "waveai:panelopen"?: boolean;
         "waveai:panelwidth"?: number;
         "waveai:model"?: string;
@@ -2275,6 +2276,15 @@ declare global {
     type WorkspaceListEntry = {
         workspaceid: string;
         windowid: string;
+    };
+
+    // waveobj.WorkspaceScript
+    type WorkspaceScript = {
+        id: string;
+        name: string;
+        command: string;
+        desc?: string;
+        lastused?: number;
     };
 
     // wshrpc.WshServerCommandMeta

@@ -10,6 +10,8 @@ import { SetSecretDialog } from "@/builder/tabs/builder-secrettab";
 import { AboutModal } from "./about";
 import { ConfirmModal } from "./confirmmodal";
 import { UserInputModal } from "./userinputmodal";
+import { WorkspaceScriptsModal } from "./workspace-scripts-modal";
+import { WorkspaceScriptsPicker } from "./workspace-scripts-picker";
 
 const modalRegistry: { [key: string]: React.ComponentType<any> } = {
     [NewInstallOnboardingModal.displayName || "NewInstallOnboardingModal"]: NewInstallOnboardingModal,
@@ -23,6 +25,8 @@ const modalRegistry: { [key: string]: React.ComponentType<any> } = {
     [RenameFileModal.displayName || "RenameFileModal"]: RenameFileModal,
     [DeleteFileModal.displayName || "DeleteFileModal"]: DeleteFileModal,
     [SetSecretDialog.displayName || "SetSecretDialog"]: SetSecretDialog,
+    [WorkspaceScriptsPicker.displayName || "WorkspaceScriptsPicker"]: WorkspaceScriptsPicker,
+    [WorkspaceScriptsModal.displayName || "WorkspaceScriptsModal"]: WorkspaceScriptsModal,
 };
 
 export const getModalComponent = (key: string): React.ComponentType<any> | undefined => {

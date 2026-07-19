@@ -3,7 +3,10 @@ import clsx from "clsx";
 import { memo, useEffect, useRef, useState } from "react";
 import { Button } from "../element/button";
 import { Input } from "../element/input";
+import { modalsModel } from "../store/modalmodel";
 import { WorkspaceService } from "../store/services";
+import * as WOS from "../store/wos";
+import { getScriptsFromWorkspace } from "../workspace/workspace-scripts";
 import { WorkspaceConnectionSelector } from "./workspaceconnectionselector";
 import "./workspaceeditor.scss";
 
@@ -68,6 +71,7 @@ interface WorkspaceEditorProps {
     connName: string;
     cwd: string;
     focusInput: boolean;
+    workspaceId?: string;
     onTitleChange: (newTitle: string) => void;
     onColorChange: (newColor: string) => void;
     onIconChange: (newIcon: string) => void;
@@ -83,6 +87,7 @@ const WorkspaceEditorComponent = ({
     connName,
     cwd,
     focusInput,
+    workspaceId,
     onTitleChange,
     onColorChange,
     onIconChange,
@@ -134,6 +139,7 @@ const WorkspaceEditorComponent = ({
             <Input className="py-[3px]" onChange={onCwdChange} value={cwd} placeholder="Default work directory" />
             <ColorSelector selectedColor={color} colors={colors} onSelect={onColorChange} />
             <IconSelector selectedIcon={icon} icons={icons} onSelect={onIconChange} />
+            {workspaceId && <ScriptsSection workspaceId={workspaceId} />}
             <div className="delete-ws-btn-wrapper">
                 <Button className="ghost red text-[12px] bold" onClick={onDeleteWorkspace}>
                     Delete workspace
@@ -142,5 +148,23 @@ const WorkspaceEditorComponent = ({
         </div>
     );
 };
+
+const ScriptsSection = memo(({ workspaceId }: { workspaceId: string }) => {
+    const [workspace] = WOS.useWaveObjectValue<Workspace>(WOS.makeORef("workspace", workspaceId));
+    const scripts = getScriptsFromWorkspace(workspace);
+
+    const handleManage = () => {
+        modalsModel.pushModal("WorkspaceScriptsModal", { workspaceId });
+    };
+
+    return (
+        <div className="scripts-section">
+            <span className="scripts-section-label">Scripts ({scripts.length})</span>
+            <Button className="ghost grey text-[12px] bold" onClick={handleManage}>
+                Manage
+            </Button>
+        </div>
+    );
+});
 
 export const WorkspaceEditor = memo(WorkspaceEditorComponent);
